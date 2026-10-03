@@ -2,6 +2,7 @@
 # Установка FiberFleet на Ubuntu 22.04/24.04 или Debian 12 (сервер с root-доступом).
 #
 #   sudo bash install.sh fleet.example.ru admin@example.ru
+#   sudo bash install.sh auto        # без своего домена: адрес <IP>.sslip.io + HTTPS
 #
 # Аргументы: домен (A-запись должна уже указывать на IP сервера) и e-mail для Let's Encrypt.
 # Без домена (только по IP, без HTTPS):  sudo bash install.sh
@@ -16,6 +17,13 @@ BRANCH=${FF_BRANCH:-claude/fiberfleet-app}
 SRC_DIR=$(cd "$(dirname "$0")/.." && pwd)
 
 [ "$(id -u)" -eq 0 ] || { echo "Запустите через sudo"; exit 1; }
+
+# Своего домена нет: «auto» → бесплатное имя <ip-через-дефисы>.sslip.io (указывает на IP сервера), с HTTPS
+if [ "$DOMAIN" = "auto" ]; then
+  PUBIP=$(curl -fsS4 --max-time 10 https://api.ipify.org || hostname -I | awk '{print $1}')
+  DOMAIN="$(echo "$PUBIP" | tr '.' '-').sslip.io"
+  echo "   домен: $DOMAIN"
+fi
 
 echo "== 1/8 Системные пакеты"
 apt-get update -y

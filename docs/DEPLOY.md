@@ -54,7 +54,11 @@ git clone -b claude/fiberfleet-app https://github.com/NeoBlau/FiberFleet.git /op
 cd /opt/fiberfleet
 sudo bash deploy/install.sh fleet.вашадомен.ru you@почта.ru
 ```
-Без домена (временно, только по IP и без HTTPS): `sudo bash deploy/install.sh`
+Без своего домена — режим `auto`: установщик возьмёт бесплатный адрес `<IP-через-дефисы>.sslip.io` (например `195-133-92-135.sslip.io`) и получит для него HTTPS-сертификат:
+```bash
+sudo bash deploy/install.sh auto
+```
+Только по IP и без HTTPS (не рекомендуется — не работают установка на телефоны и офлайн-режим): `sudo bash deploy/install.sh`
 
 Скрипт сам:
 1. установит nginx, sqlite3, Node.js 22;
