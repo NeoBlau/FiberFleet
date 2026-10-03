@@ -1,0 +1,18 @@
+{
+  "name": "fiberfleet-demo",
+  "private": true,
+  "type": "module",
+  "description": "Демо-версия FiberFleet в одном HTML-файле (вся логика работает в браузере). Полная версия не затрагивается.",
+  "scripts": {
+    "build": "vite build && node inline.mjs"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "sql.js": "1.13.0",
+    "vite": "^6.4.3"
+  }
+}

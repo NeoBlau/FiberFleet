@@ -1,13 +1,5 @@
 [
  {
-  "tractor": "№ ТС",
-  "tractor_model": "Модель",
-  "tractor_year": "Год выпуска",
-  "trailer": "№ полуприцепа",
-  "trailer_model": "Модель",
-  "trailer_year": "Год выпуска"
- },
- {
   "tractor": "Т970ОН58",
   "tractor_model": "FAW J7 EURO 6",
   "tractor_year": 2023,
