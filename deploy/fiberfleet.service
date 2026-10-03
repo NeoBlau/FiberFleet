@@ -1,0 +1,22 @@
+[Unit]
+Description=FiberFleet — сервис тягачей и прицепов
+After=network.target
+
+[Service]
+Type=simple
+User=fiberfleet
+Group=fiberfleet
+WorkingDirectory=/opt/fiberfleet
+EnvironmentFile=/etc/fiberfleet.env
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+# Защита
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/fiberfleet
+
+[Install]
+WantedBy=multi-user.target
