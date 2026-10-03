@@ -1,0 +1,25 @@
+{
+  "name": "fiberfleet",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FiberFleet — планирование, учёт и контроль сервисного обслуживания тягачей и прицепов",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"node --watch server/index.js\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "start": "node server/index.js",
+    "test": "node --test server/test/*.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "compression": "^1.8.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "multer": "^2.0.2",
+    "pdfkit": "^0.17.2"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
