@@ -1,0 +1,11 @@
+services:
+  fiberfleet:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      FF_ADMIN_PASSWORD: "смените-меня"
+      FF_DEMO_USERS: "0"
+    volumes:
+      - ./data:/data

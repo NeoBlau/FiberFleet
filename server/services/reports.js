@@ -322,9 +322,9 @@ export function orderToPdf(order, res, { company, off }) {
     st: STATUS[t.status], pr: t.priority,
   }));
   pdfTable(doc, [
-    { key: 'pr', title: 'Пр.', width: 3, type: 'int' }, { key: 'description', title: 'Работа', width: 30 }, { key: 'location', title: 'Узел', width: 14 },
+    { key: 'pr', title: 'Пр.', width: 3, type: 'int' }, { key: 'description', title: 'Работа', width: 28 }, { key: 'location', title: 'Узел', width: 14 },
     { key: 'employee_name', title: 'Исполнитель', width: 12 }, { key: 'when', title: 'Начало', width: 12 },
-    { key: 'hours', title: 'Н/ч', width: 5, type: 'num' }, { key: 'price', title: 'Цена, ₽', width: 8, type: 'money' }, { key: 'st', title: 'Статус', width: 11 },
+    { key: 'hours', title: 'Н/ч', width: 5, type: 'num' }, { key: 'price', title: 'Цена, ₽', width: 8, type: 'money' }, { key: 'st', title: 'Статус', width: 14 },
   ], tasks, { description: `Работ: ${tasks.length}`, hours: sum(tasks, 'hours'), price: sum(tasks, 'price') });
 
   if (order.parts?.length) {
