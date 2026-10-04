@@ -155,20 +155,8 @@ export default function DefectSheet() {
         <div className="defect-main">
           <Card title="Транспортное средство">
             <div className="form-grid">
-              <Field label="Тягач (госномер)">
-                <div className="row gap-s">
-                  <SearchSelect clearable value={head.tractor_id} onChange={chooseTractor} placeholder="Выберите тягач"
-                    options={(tractors.data || []).map((t) => ({ value: t.id, label: `${plate(t.plate)} — ${t.brand} ${t.model || ''}`, search: t.plate }))} />
-                  <Button icon={Plus} title="Новый тягач" onClick={() => setNewVehicle('tractor')} />
-                </div>
-              </Field>
-              <Field label="Полуприцеп (п/п)">
-                <div className="row gap-s">
-                  <SearchSelect clearable value={head.trailer_id} onChange={(v) => setHead((h) => ({ ...h, trailer_id: v }))} placeholder="Без прицепа"
-                    options={(trailers.data || []).map((t) => ({ value: t.id, label: `${plate(t.plate)} — ${t.brand || ''} ${t.model}`, search: t.plate }))} />
-                  <Button icon={Plus} title="Новый прицеп" onClick={() => setNewVehicle('trailer')} />
-                </div>
-              </Field>
+              <VehiclePicker kind="tractor" list={tractors.data || []} value={head.tractor_id} onChange={chooseTractor} onNew={() => setNewVehicle('tractor')} />
+              <VehiclePicker kind="trailer" list={trailers.data || []} value={head.trailer_id} onChange={(v) => setHead((h) => ({ ...h, trailer_id: v }))} onNew={() => setNewVehicle('trailer')} />
               {tractor && (
                 <Field label="Пробег тягача, км *" hint={tractor.mileage ? `Последний: ${km(tractor.mileage)}` : 'Пробег ещё не записывался'}>
                   <input className="input" type="number" inputMode="numeric" value={head.tractor_mileage} onChange={(e) => setHead((h) => ({ ...h, tractor_mileage: e.target.value }))} />
@@ -236,6 +224,42 @@ export default function DefectSheet() {
         if (t === 'tractor') { await tractors.reload(true); if (id) chooseTractor(id); } else { await trailers.reload(true); if (id) setHead((h) => ({ ...h, trailer_id: id })); }
       }} />}
     </div>
+  );
+}
+
+// Выбор ТС как в бумажной ведомости: сначала марка и модель, затем госномер
+const modelKey = (v) => `${v.brand || ''} ${v.model || ''}`.replace(/\s+/g, ' ').trim() || 'Без марки';
+
+function VehiclePicker({ kind, list, value, onChange, onNew }) {
+  const selected = list.find((v) => v.id === value) || null;
+  const [model, setModel] = useState(null);
+  useEffect(() => { if (selected) setModel(modelKey(selected)); }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const models = useMemo(() => {
+    const m = new Map();
+    for (const v of list) m.set(modelKey(v), (m.get(modelKey(v)) || 0) + 1);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru'));
+  }, [list]);
+  const filtered = model ? list.filter((v) => modelKey(v) === model) : list;
+  const isTractor = kind === 'tractor';
+  const chooseModel = (m) => {
+    setModel(m);
+    if (selected && modelKey(selected) !== m) onChange(null);
+  };
+  return (
+    <>
+      <Field label={isTractor ? 'Марка и модель тягача' : 'Марка и модель полуприцепа (п/п)'}>
+        <SearchSelect clearable value={model} onChange={chooseModel} placeholder={isTractor ? 'Выберите марку и модель' : 'Без прицепа'}
+          options={models.map(([k, n]) => ({ value: k, label: `${k} (${n})` }))} />
+      </Field>
+      <Field label={isTractor ? 'Госномер тягача' : 'Госномер полуприцепа'}>
+        <div className="row gap-s">
+          <SearchSelect clearable value={value} onChange={onChange}
+            placeholder={model ? 'Выберите госномер' : isTractor ? 'Сначала марка и модель (или поиск по номеру)' : 'Без прицепа'}
+            options={filtered.map((v) => ({ value: v.id, label: model ? plate(v.plate) : `${plate(v.plate)} — ${modelKey(v)}`, search: v.plate }))} />
+          <Button icon={Plus} title={isTractor ? 'Новый тягач' : 'Новый прицеп'} onClick={onNew} />
+        </div>
+      </Field>
+    </>
   );
 }
 
