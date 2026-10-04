@@ -181,6 +181,14 @@ docker compose up -d --build
 
 > `update.sh` работает, если программа ставилась через `git clone`. Если загружали ZIP — загрузите новый архив, распакуйте поверх `/opt/fiberfleet` (папку `/var/lib/fiberfleet` не трогайте) и выполните шаги 4 и `systemctl restart fiberfleet`.
 
+### Загрузка пробега и актуального списка ТС
+Сразу после установки (и каждый раз, когда обновляете `server/seed/fleet.json`) загрузите пробег, сцепки и заметки:
+```bash
+cd /opt/fiberfleet
+runuser -u fiberfleet -- env FF_DATA_DIR=/var/lib/fiberfleet node tools/fleet-update.mjs
+```
+Утилита ничего не удаляет; ТС, которых нет в сводке, только перечисляет.
+
 ### Восстановление из резервной копии
 ```bash
 systemctl stop fiberfleet

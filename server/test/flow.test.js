@@ -44,7 +44,7 @@ test('сид: парк ТС, справочник работ, сотрудник
   assert.ok(wt.data.length >= 180, `работ ${wt.data.length}`);
   const t = tr.data.find((x) => x.plate === 'Т970ОН58');
   assert.equal(t.brand, 'FAW');
-  assert.equal(t.trailer_plate, 'АЕ1043/95');
+  assert.equal(t.trailer_plate, 'АН9275/58');
 });
 
 test('рабочий календарь: переход через обед и выходные', () => {

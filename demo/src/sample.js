@@ -1,15 +1,20 @@
 // Пример данных для демо: пробеги парка и несколько ремонтов «в работе».
-// Пробеги условные — в исходном списке ТС их нет.
+// Пробег — из сводки «АВТО» (где не указан — условный).
+import fleet from '../../server/seed/fleet.json';
+
+const plateKey = (p) => String(p || '').toUpperCase().replace(/\s+/g, '');
+
 export async function fillDemoData(db, handle) {
+  const realKm = new Map(fleet.filter((r) => r.tractor && r.tractor_mileage).map((r) => [plateKey(r.tractor), r.tractor_mileage]));
   const now = Date.now();
   const DAY = 86400000;
-  const tractors = db.prepare('SELECT id, year FROM tractors').all();
+  const tractors = db.prepare('SELECT id, year, plate FROM tractors').all();
   const insLog = db.prepare('INSERT INTO mileage_log(vehicle_type, vehicle_id, mileage, recorded_at, source) VALUES (?, ?, ?, ?, ?)');
   db.transaction(() => {
     for (const t of tractors) {
       const age = Math.max(1, 2026 - (t.year || 2015));
       const perDay = 300 + ((t.id * 97) % 280);
-      const m = 90000 + Math.min(age, 9) * 68000 + ((t.id * 7919) % 41000);
+      const m = realKm.get(plateKey(t.plate)) || 90000 + Math.min(age, 9) * 68000 + ((t.id * 7919) % 41000);
       insLog.run('tractor', t.id, m - perDay * 60, new Date(now - 60 * DAY).toISOString(), 'import');
       insLog.run('tractor', t.id, m, new Date(now - DAY).toISOString(), 'import');
       db.prepare('UPDATE tractors SET mileage = ? WHERE id = ?').run(m, t.id);
