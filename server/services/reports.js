@@ -315,6 +315,14 @@ export function orderToPdf(order, res, { company, off }) {
     for (const d of dmg) doc.text(`• ${d.label}: ${(d.zones || []).join(', ') || '—'}${d.comment ? ` — ${d.comment}` : ''}`);
   }
 
+  const readings = order.inspection?.readings || [];
+  if (readings.length) {
+    doc.moveDown(0.4).font('b').fontSize(11).text('Показания и замеры при дефектовке');
+    doc.font('r').fontSize(8.5);
+    for (const r of readings) doc.fillColor(r.bad ? '#b91c1c' : '#111').text(`• ${r.label}: ${r.text}${r.bad ? ' — вне нормы' : ''}`);
+    doc.fillColor('#111');
+  }
+
   doc.moveDown(0.6).font('b').fontSize(11).text('План работ');
   doc.moveDown(0.2);
   const tasks = order.tasks.filter((t) => t.status !== 'cancelled').map((t) => ({
@@ -335,6 +343,16 @@ export function orderToPdf(order, res, { company, off }) {
       { key: 'code', title: 'Код 1С', width: 10 }, { key: 'article', title: 'Артикул', width: 12 }, { key: 'name', title: 'Наименование', width: 34 },
       { key: 'qty', title: 'Кол-во', width: 6, type: 'num' }, { key: 'price', title: 'Цена, ₽', width: 9, type: 'money' }, { key: 'total', title: 'Сумма, ₽', width: 10, type: 'money' },
     ], parts, { name: 'Итого', total: sum(parts, 'total') });
+  }
+  const ec = order.exit_control;
+  if (ec) {
+    const L = { ok: 'работает', defect: 'НЕИСПРАВНО', na: 'нет на ТС' };
+    const NAMES = { heater: 'Печка', autonomous: 'Автономка', ac: 'Кондиционер' };
+    doc.moveDown(0.6).font('b').fontSize(11).fillColor('#111').text(`Выходной контроль: ${ec.result === 'ok' ? 'пройден' : 'есть замечания'}`);
+    doc.font('r').fontSize(9);
+    doc.text(Object.entries(ec.checks || {}).map(([k, v]) => `${NAMES[k] || k} — ${L[v] || v}`).join(';  '));
+    doc.text(`Контроль провёл: ${ec.inspector_name} · ${f(ec.at)}`);
+    if (ec.comment) doc.text(`Замечания: ${ec.comment}`);
   }
   if (order.notes) doc.moveDown(0.5).font('r').fontSize(9).text(`Примечание: ${order.notes}`);
 

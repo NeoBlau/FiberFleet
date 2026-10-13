@@ -32,10 +32,21 @@ function isDefect(item, ans, maintByKey) {
     }
     case 'positions':
       return Array.isArray(ans.positions) && ans.positions.length > 0;
+    case 'circuits': {
+      if (ans.state === 'defect') return true;
+      const vals = circuitValues(ans);
+      if (!vals.length) return false;
+      return vals.some((v) => v < item.min || v > item.max)
+        || (item.maxDelta != null && vals.length > 1 && Math.max(...vals) - Math.min(...vals) > item.maxDelta);
+    }
     default:
       return false;
   }
 }
+
+const toNum = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
+const circuitValues = (ans) => (ans.values || []).map(toNum).filter((v) => v != null);
+const fmtNum = (v) => String(v).replace('.', ',');
 
 function matchWorks(item, veh, vehicleRec, axle) {
   return (item.works || []).filter((w) => {
@@ -57,7 +68,7 @@ export function generatePlan(db, ctx) {
   const { byKey, byId } = workTypeIndex(db);
   const { tractor, trailer, cal } = ctx;
   const defects = ctx.defects || {};
-  const answers = defects.items || {};
+  const answers = { ...(defects.items || {}) };
   const inspectedAt = ctx.inspected_at || new Date().toISOString();
   const vehicles = { tractor, trailer };
 
@@ -105,6 +116,46 @@ export function generatePlan(db, ctx) {
     return wt;
   };
 
+  // Показания приборов и замеры (сохраняются в ремонте для истории)
+  const readings = [];
+  for (const item of Object.values(ITEMS)) {
+    const ans = answers[item.id];
+    if (!ans) continue;
+    if (item.kind === 'volt' && toNum(ans.value) != null) {
+      const v = toNum(ans.value);
+      readings.push({ item: item.id, label: item.label, text: `${fmtNum(v)} ${item.unit}`, bad: v < item.min || v > item.max });
+    }
+    if (item.kind === 'circuits' && circuitValues(ans).length) {
+      readings.push({
+        item: item.id, label: item.label, bad: isDefect(item, ans),
+        text: item.circuits.map((c, i) => `${c}: ${toNum(ans.values?.[i]) != null ? fmtNum(toNum(ans.values[i])) : '—'}`).join(' · ') + ` ${item.unit}`,
+      });
+    }
+  }
+
+  // Замеры колодок и дисков: ниже нормы → позиция автоматически попадает в «Колодки» / «Диски»
+  const measureItem = Object.values(ITEMS).find((i) => i.kind === 'measure');
+  for (const [code, v] of Object.entries(answers[measureItem?.id]?.measure || {})) {
+    const p = parsePosition(code);
+    const vrec = vehicles[p.veh];
+    const pad = toNum(v?.pad), disc = toNum(v?.disc);
+    if (!vrec || (pad == null && disc == null)) continue;
+    const lowPad = pad != null && pad < measureItem.padMin;
+    const lowDisc = disc != null && (vrec.brake_type || 'disc') === 'disc' && disc < measureItem.discMin;
+    readings.push({
+      item: measureItem.id, label: positionLabel(code), bad: lowPad || lowDisc,
+      text: [pad != null ? `колодка ${fmtNum(pad)} мм` : null, disc != null ? `диск ${fmtNum(disc)} мм` : null].filter(Boolean).join(', '),
+    });
+    const mark = (id, what) => {
+      const a = { ...(answers[id] || {}) };
+      a.positions = [...new Set([...(a.positions || []), code])];
+      a.comment = [a.comment, `по замеру ${what} ниже нормы`].filter(Boolean).filter((x, i, arr) => arr.indexOf(x) === i).join('; ');
+      answers[id] = a;
+    };
+    if (lowPad) mark('br_pads', 'колодок');
+    if (lowDisc) mark('br_discs', 'дисков');
+  }
+
   // Сначала — дефекты, затем связанные проверки (чтобы не дублировать уже назначенные работы)
   const relatedQueue = [];
 
@@ -118,6 +169,14 @@ export function generatePlan(db, ctx) {
           damages.push({ item: item.id, label: item.label, zones: ans.zones || [], comment: ans.comment || '' });
         }
         continue;
+      }
+      // ТО: работы, выбранные мастером из справочника, — даже если полное ТО не требуется
+      if (item.kind === 'mileage' && Array.isArray(ans.works)) {
+        const veh = item.vehicle === 'trailer' ? 'trailer' : 'tractor';
+        for (const id of ans.works) {
+          const wt = byId.get(Number(id));
+          if (wt) addTask({ wt, veh, location: null, reason: `${item.label}: выбрано из справочника${ans.comment ? ` — ${ans.comment}` : ''}`, source: 'maintenance', seq: 2, priority: item.priority });
+        }
       }
       if (!isDefect(item, ans, maint[item.vehicle === 'trailer' ? 'trailer' : 'tractor'])) continue;
 
@@ -139,7 +198,9 @@ export function generatePlan(db, ctx) {
       const zoneEntry = {
         item: item.id, label: item.label, section: section.title, priority: item.priority,
         positions: [], vehicles: new Set(), checks: item.checks || [], zone: item.zone || '',
-        value: item.kind === 'volt' ? ans.value : undefined, unit: item.unit, comment: ans.comment || '',
+        value: item.kind === 'volt' ? ans.value
+          : item.kind === 'circuits' ? (ans.values || []).map((v) => (toNum(v) != null ? fmtNum(toNum(v)) : '—')).join(' / ') : undefined,
+        unit: item.unit, comment: ans.comment || '',
       };
 
       for (const t of targets) {
@@ -236,7 +297,7 @@ export function generatePlan(db, ctx) {
   const list = [...tasks.values()].map((t) => ({ ...t, reason: t.reasons.join('; ') }));
   list.forEach((t) => delete t.reasons);
   list.sort((a, b) => a.seq - b.seq || a.priority - b.priority || a.vehicle_type.localeCompare(b.vehicle_type));
-  return { tasks: list, inspection, damages, recommendations, warnings: [...new Set(warnings)] };
+  return { tasks: list, inspection, damages, recommendations, readings, warnings: [...new Set(warnings)] };
 }
 
 const fmt = (iso) => fmtDateTime(iso, 180);

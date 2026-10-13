@@ -10,10 +10,17 @@ import { bad, HttpError, notFound, num } from '../util.js';
 
 const ACTIVE = ['planned', 'plan_error', 'approved', 'in_progress'];
 
+// Проверки при выходном контроле (порядок — как в бланке)
+export const EXIT_CHECKS = [
+  { id: 'heater', label: 'Печка (отопитель салона)' },
+  { id: 'autonomous', label: 'Автономка (автономный отопитель)' },
+  { id: 'ac', label: 'Кондиционер' },
+];
+
 export default function orderRoutes(db) {
   const r = express.Router();
 
-  r.get('/checklist', (_req, res) => res.json(publicTemplate()));
+  r.get('/checklist', (_req, res) => res.json({ ...publicTemplate(), exitChecks: EXIT_CHECKS }));
 
   r.get('/orders', (req, res) => {
     const where = [];
@@ -134,6 +141,39 @@ export default function orderRoutes(db) {
     res.json({ ok: true });
   });
 
+  // ---- Выходной контроль ----
+  r.put('/orders/:id/exit-control', requirePerm('orders.write'), (req, res) => {
+    const o = loadOrder(db, req.params.id);
+    if (o.status === 'cancelled') throw bad('Ремонт отменён');
+    const b = req.body || {};
+    const open = o.tasks.filter((t) => !['done', 'cancelled'].includes(t.status));
+    if (open.length) {
+      throw bad(`Выходной контроль возможен после завершения всех работ. Не выполнено: ${open.map((t) => `«${t.description}»`).join(', ')}`);
+    }
+    const checks = {};
+    for (const c of EXIT_CHECKS) {
+      const v = b.checks?.[c.id];
+      if (!['ok', 'defect', 'na'].includes(v)) throw bad(`Отметьте проверку «${c.label}»`);
+      checks[c.id] = v;
+    }
+    const failed = EXIT_CHECKS.filter((c) => checks[c.id] === 'defect');
+    if (failed.length && !String(b.comment || '').trim()) throw bad(`Опишите неисправность: ${failed.map((c) => c.label).join(', ')}`);
+    const inspector = b.inspector_id ? db.prepare('SELECT id, name FROM employees WHERE id = ?').get(b.inspector_id) : null;
+    if (!inspector) throw bad('Укажите, кто проводил выходной контроль');
+    const data = {
+      checks, comment: String(b.comment || '').trim() || null,
+      inspector_id: inspector.id, inspector_name: inspector.name,
+      result: failed.length ? 'defect' : 'ok',
+      at: nowIso(), user_id: req.user.id, user_name: req.user.name,
+      works: o.tasks.filter((t) => t.status === 'done').map((t) => ({
+        id: t.id, description: t.description, location: t.location, employee: t.employee_name, finished_at: t.finished_at, actual_hours: t.actual_hours,
+      })),
+    };
+    db.prepare('UPDATE repair_orders SET exit_control = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), nowIso(), o.id);
+    audit(db, req.user, 'order', o.id, 'exit_control', `${data.result}; принял ${inspector.name}`);
+    res.json(loadOrder(db, o.id));
+  });
+
   // ---- Работы (задачи) ----
 
   r.post('/orders/:id/tasks', requirePerm('plan.write'), (req, res) => {
@@ -249,7 +289,9 @@ export default function orderRoutes(db) {
       let extra = '';
       if (status === 'in_progress' && !t.started_at) { extra += ', started_at = @started_at'; upd.started_at = ts; }
       if (status === 'done') {
-        const started = t.started_at || db.prepare('SELECT start_at FROM schedule WHERE task_id = ?').get(t.id)?.start_at || ts;
+        const planned = db.prepare('SELECT start_at FROM schedule WHERE task_id = ?').get(t.id)?.start_at;
+        // отмечено раньше планового начала — началом считаем плановое, но не позже окончания
+        const started = t.started_at || (planned && planned < ts ? planned : ts);
         let actual = num(req.body.actual_hours);
         if (actual == null) actual = Math.max(0.1, Math.round(((cal.toWork(ts) - cal.toWork(started)) / 60) * 100) / 100);
         if (!t.employee_id && !req.body.employee_id) throw bad('Укажите исполнителя работы');

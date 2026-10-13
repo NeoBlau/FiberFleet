@@ -434,3 +434,27 @@ select.input { padding-right: 28px; }
 .tasks-table td.actions { white-space: normal; width: 1%; min-width: 84px; }
 .tasks-table td.actions .btn { margin: 0 4px 4px 0; }
 .tasks-table .reason { max-width: 340px; }
+
+/* замеры, давление по контурам, работы к ТО, выходной контроль */
+.circuits { display: flex; gap: 12px; flex-wrap: wrap; }
+.circuit { display: flex; flex-direction: column; gap: 2px; }
+.circuits .volt .input { width: 96px; }
+.measure { min-width: 0; }
+.measure-table { border-collapse: collapse; font-size: 13px; }
+.measure-table th { font-weight: 600; color: var(--muted); font-size: 12px; padding: 2px 6px; text-align: center; white-space: nowrap; }
+.measure-table tbody th { text-align: left; }
+.measure-table td { padding: 2px 3px; }
+.input.mm { width: 70px; text-align: center; }
+.w-100 { flex-basis: 100%; }
+.pick-work { max-width: 460px; }
+.readings { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 6px 16px; }
+.reading span { flex: 0 0 auto; }
+.reading b { text-align: right; }
+.reading { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+.reading b { font-variant-numeric: tabular-nums; }
+.exit-checks { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.exit-check { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+@media (max-width: 640px) {
+  .measure-table th, .measure-table td { padding: 1px; }
+  .input.mm { width: 54px; }
+}

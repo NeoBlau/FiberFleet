@@ -58,7 +58,7 @@ export function createOrder(db, input, user) {
       input.tractor_mileage ?? null, input.trailer_mileage ?? null, input.reefer_hours ?? null,
       inspectedAt, input.release_deadline || null,
       JSON.stringify(input.defects || {}),
-      JSON.stringify({ zones: plan.inspection, damages: plan.damages, recommendations: plan.recommendations, warnings: plan.warnings }),
+      JSON.stringify({ zones: plan.inspection, damages: plan.damages, recommendations: plan.recommendations, readings: plan.readings, warnings: plan.warnings }),
       input.notes || null, user?.id ?? null,
     );
     const orderId = Number(res.lastInsertRowid);
@@ -136,6 +136,7 @@ export function loadOrder(db, id) {
   o.defects = json(o.defects, {});
   o.inspection = json(o.inspection, {});
   o.plan_errors = json(o.plan_errors, []);
+  o.exit_control = json(o.exit_control, null);
   o.tasks = db.prepare(`SELECT t.*, w.category, w.code AS work_code, e.name AS employee_name,
       s.start_at, s.end_at, s.locked, s.employee_id AS scheduled_employee_id
     FROM tasks t

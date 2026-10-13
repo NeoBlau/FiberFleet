@@ -280,7 +280,16 @@ export function openDb(file) {
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Обновление схемы уже существующих баз (новые поля добавляются без потери данных)
+function migrate(db) {
+  const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+  if (!cols('repair_orders').includes('exit_control')) {
+    db.exec('ALTER TABLE repair_orders ADD COLUMN exit_control TEXT'); // JSON: выходной контроль
+  }
 }
 
 export const json = (v, fallback) => {

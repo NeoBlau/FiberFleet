@@ -12,7 +12,7 @@ import { Badge, Button, Card, Confirm, cx, Empty, ErrorBox, Field, Modal, Search
 
 export default function OrderPage() {
   const { id } = useParams();
-  const { user } = useApp();
+  const { user, checklist } = useApp();
   const nav = useNavigate();
   const { data: o, loading, error, reload, setData } = useLoad(() => api.get(`/orders/${id}`), [id]);
   const employees = useLoad(() => (can(user, 'employees.read') || can(user, 'tasks.status') ? api.get('/employees') : Promise.resolve([])));
@@ -117,6 +117,16 @@ export default function OrderPage() {
         </Card>
       )}
 
+      {(o.inspection?.readings || []).length > 0 && (
+        <Card title="Показания и замеры при дефектовке">
+          <div className="readings">
+            {o.inspection.readings.map((r, i) => (
+              <div key={i} className="reading"><span>{r.label}</span><b className={r.bad ? 'text-red' : ''}>{r.text}{r.bad ? ' — вне нормы' : ''}</b></div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card title="План ремонта" pad={false} actions={canPlan && <Button size="sm" icon={Plus} onClick={() => setAddWork(true)}>Добавить работу</Button>}>
         {o.tasks.length === 0 ? <Empty title="Работ нет">Добавьте работы из справочника</Empty> : byVehicle.map(({ vt, list }) => (
           <div key={vt}>
@@ -181,6 +191,10 @@ export default function OrderPage() {
           </div>
         )}
       </Card>
+      {o.status !== 'cancelled' && (
+        <ExitControl order={o} employees={employees.data || []} checks={checklist?.exitChecks || []} canEdit={can(user, 'orders.write')}
+          onSave={(b) => act(() => api.put(`/orders/${o.id}/exit-control`, b, { label: `Выходной контроль ${o.number}` }), 'Выходной контроль сохранён')} />
+      )}
       {o.notes && <Card title="Примечание"><p>{o.notes}</p></Card>}
 
       {taskEdit && (
@@ -369,6 +383,88 @@ function AddPartDialog({ order, initial, onClose, onAdd }) {
       </div>
       {!partId && <label className="check"><input type="checkbox" checked={f.save_to_catalog} onChange={set('save_to_catalog')} /> Добавить в номенклатуру</label>}
     </Modal>
+  );
+}
+
+const EXIT_OPTIONS = [
+  { value: 'ok', label: 'Работает', tone: 'green' },
+  { value: 'defect', label: 'Неисправно', tone: 'red' },
+  { value: 'na', label: 'Нет на ТС', tone: 'blue' },
+];
+
+function ExitControl({ order, employees, checks, canEdit, onSave }) {
+  const ec = order.exit_control;
+  const [edit, setEdit] = useState(false);
+  const [f, setF] = useState(() => ({ checks: ec?.checks || {}, inspector_id: ec?.inspector_id || null, comment: ec?.comment || '' }));
+  const live = order.tasks.filter((t) => t.status !== 'cancelled');
+  const open = live.filter((t) => t.status !== 'done');
+  const done = live.filter((t) => t.status === 'done');
+  const showForm = canEdit && !open.length && (!ec || edit);
+  const ready = checks.every((c) => f.checks[c.id]) && f.inspector_id;
+  return (
+    <Card title="Выходной контроль" actions={ec && <Badge tone={ec.result === 'ok' ? 'green' : 'red'}>{ec.result === 'ok' ? 'Пройден' : 'Есть замечания'}</Badge>}>
+      <h4 style={{ marginTop: 0 }}>Кто что делал</h4>
+      {done.length === 0 ? <p className="muted">Выполненных работ пока нет.</p> : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Работа</th><th>Узел</th><th>Выполнил</th><th>Завершено</th><th>Факт</th></tr></thead>
+            <tbody>
+              {done.map((t) => (
+                <tr key={t.id}><td>{t.description}</td><td>{t.location || '—'}</td><td><b>{t.employee_name || '—'}</b></td>
+                  <td className="nowrap">{fmtDateTime(t.finished_at)}</td><td className="nowrap">{hours(t.actual_hours || t.hours)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <h4>Проверки при выпуске</h4>
+      {open.length > 0 && !ec && (
+        <div className="alert alert-amber">Выходной контроль проводится после завершения всех работ. Осталось: {open.length}.</div>
+      )}
+      {ec && !edit && (
+        <>
+          <div className="exit-checks">
+            {checks.map((c) => {
+              const v = EXIT_OPTIONS.find((x) => x.value === ec.checks?.[c.id]);
+              return <div key={c.id} className="exit-check"><span>{c.label}</span>{v ? <Badge tone={v.tone === 'blue' ? 'gray' : v.tone}>{v.label}</Badge> : '—'}</div>;
+            })}
+          </div>
+          <p>Контроль провёл: <b>{ec.inspector_name}</b> · {fmtDateTime(ec.at)}{ec.user_name ? ` · внёс ${ec.user_name}` : ''}</p>
+          {ec.comment && <p>Замечания: {ec.comment}</p>}
+          {canEdit && <Button size="sm" icon={Pencil} onClick={() => setEdit(true)}>Изменить</Button>}
+        </>
+      )}
+      {showForm && (
+        <>
+          <div className="exit-checks">
+            {checks.map((c) => (
+              <div key={c.id} className="exit-check">
+                <span>{c.label}</span>
+                <div className="seg">
+                  {EXIT_OPTIONS.map((o) => (
+                    <button key={o.value} type="button" className={cx('seg-btn', f.checks[c.id] === o.value && `on-${o.tone}`)}
+                      onClick={() => setF((s) => ({ ...s, checks: { ...s.checks, [c.id]: o.value } }))}>{o.label}</button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="form-grid">
+            <Field label="Контроль провёл">
+              <SearchSelect value={f.inspector_id} onChange={(v) => setF((s) => ({ ...s, inspector_id: v }))} placeholder="Выберите сотрудника"
+                options={employees.filter((e) => e.active && !e.is_external).map((e) => ({ value: e.id, label: e.name }))} />
+            </Field>
+            <Field label="Замечания" hint="Обязательно, если что-то неисправно">
+              <input className="input" value={f.comment} onChange={(e) => setF((s) => ({ ...s, comment: e.target.value }))} />
+            </Field>
+          </div>
+          <div className="row gap-s">
+            <Button variant="primary" icon={CheckCircle2} disabled={!ready} onClick={() => { onSave(f); setEdit(false); }}>Подтвердить выходной контроль</Button>
+            {edit && <Button onClick={() => setEdit(false)}>Отмена</Button>}
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

@@ -8,6 +8,8 @@
 //   mileage   — работа «по пробегу», статус считается по правилам ТО (ключ maint)
 //   positions — отметка позиций на схеме осей (тягач/прицеп × ось × сторона)
 //   damage    — фиксация новых повреждений (выделить цветом), работ не создаёт
+//   circuits  — давление по контурам (бар), дефект если вне [min, max] или разница больше maxDelta
+//   measure   — замеры колодок/дисков по позициям (мм); ниже padMin/discMin → позиция в «Колодки»/«Диски»
 //
 // Работы задаются ссылкой "Категория::Название" на справочник. Фильтры подбора:
 //   veh: tractor|trailer, axle: front|rear, brake: disc|drum.
@@ -144,6 +146,21 @@ export const SECTIONS = [
         zone: 'Главный тормозной кран, ускорительные клапаны, мембраны тормозных камер, модуляторы EBS — при нажатой педали',
         related: [{ wt: 'Тормозная система::Диагностика тормозов', scope: 'vehicle', why: 'Утечка при торможении — проверить тормозную систему целиком' }],
         options: ['Тормозная система::С/у главного тормозного крана', 'Тормозная система::С/у тормозной камеры'],
+      },
+      {
+        id: 'br_pressure', label: 'Давление в контурах', kind: 'circuits', vehicle: 'tractor', priority: 1, seq: 2, unit: 'бар',
+        circuits: ['Контур 1', 'Контур 2', 'Контур 3'], min: 7.5, max: 12.5, maxDelta: 1,
+        hint: 'После набора давления, двигатель заглушен. Норма 7,5–12,5 бар, разница между контурами не более 1 бар',
+        works: [{ wt: AIR_LEAK }],
+        zone: 'Четырёхконтурный защитный клапан, ресиверы контуров, регулятор давления, компрессор, магистрали контура с низким давлением',
+        related: [{ wt: 'Тормозная система::Диагностика тормозов', scope: 'vehicle', why: 'Давление в контуре вне нормы — проверить тормозную систему' }],
+        relatedItems: ['br_receivers', 'br_leak_tractor'],
+      },
+      {
+        id: 'br_measure', label: 'Замеры колодок и дисков', kind: 'measure', priority: 1, seq: 2,
+        padMin: 4, discMin: 37,
+        hint: 'Остаток накладки колодки и толщина диска, мм. Замена: колодка менее 4 мм, диск менее 37 мм (для диска 45 мм; проверьте норму производителя)',
+        zone: 'Замер штангенциркулем через смотровое окно суппорта или со снятым колесом',
       },
       {
         id: 'br_pads', label: 'Колодки', kind: 'positions', priority: 1, seq: 2,
@@ -428,7 +445,7 @@ export function publicTemplate() {
         id: i.id, label: i.label, kind: i.kind, priority: i.priority,
         vehicle: i.vehicle || s.vehicle || 'any', unit: i.unit, min: i.min, max: i.max, hint: i.hint,
         maint: i.maint, zone: i.zone, checks: i.checks || [], relatedItems: i.relatedItems || [],
-        options: i.options || [],
+        options: i.options || [], circuits: i.circuits, maxDelta: i.maxDelta, padMin: i.padMin, discMin: i.discMin,
       })),
     })),
   };
