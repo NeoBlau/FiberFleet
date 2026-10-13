@@ -458,3 +458,12 @@ select.input { padding-right: 28px; }
   .measure-table th, .measure-table td { padding: 1px; }
   .input.mm { width: 54px; }
 }
+
+/* толщина у колеса, ручной ввод работ */
+.wheel { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
+.wheel small { font-size: 10px; font-weight: 700; }
+.wheel.has-mm { height: 38px; }
+.wheel-mm { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.wheel-mm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.manual-work { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.manual-work .input:first-child { flex: 1; min-width: 200px; max-width: 360px; }

@@ -64,7 +64,7 @@ export default function OrderPage() {
             {o.tractor_id && <Link to={`/vehicles/tractor/${o.tractor_id}`}>Тягач {plate(o.tractor_plate)}</Link>}
             {o.tractor_id && <> {o.tractor_brand} {o.tractor_model}</>}
             {o.trailer_id && <>{o.tractor_id ? ' + ' : ''}<Link to={`/vehicles/trailer/${o.trailer_id}`}>прицеп {plate(o.trailer_plate)}</Link></>}
-            {' · '}дефектовка {fmtDateTime(o.inspected_at)}{o.created_by_name ? `, ${o.created_by_name}` : ''}
+            {' · '}дефектовка {fmtDateTime(o.inspected_at)}{o.defects?.inspector?.name ? ` · провёл ${o.defects.inspector.name}` : ''}{o.created_by_name ? ` · внёс ${o.created_by_name}` : ''}
           </div>
         </div>
         <div className="row gap-s wrap">

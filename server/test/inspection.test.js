@@ -105,3 +105,26 @@ test('обновление старой базы: поле выходного к
   assert.equal(db.prepare('SELECT number FROM repair_orders').get().number, '2026-0001');
   db.close();
 });
+
+test('работы, вписанные вручную (ТО и общий список), и кто провёл дефектовку', async () => {
+  const t = await tractorByPlate('В301РХ164');
+  const emp = (await api('GET', '/employees')).data.find((e) => e.name === 'Сластунов');
+  const r = await api('POST', '/orders', {
+    tractor_id: t.id, tractor_mileage: 1200000, inspector_id: emp.id,
+    defects: {
+      items: { eng_to: { state: 'ok', custom: [{ name: 'Замена фильтра салона', hours: 0.3 }] } },
+      custom: [{ name: 'Ремонт замка двери', hours: 1.5, vehicle_type: 'tractor', priority: 3 }],
+    },
+  });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const names = r.data.tasks.map((x) => x.description);
+  assert.ok(names.includes('Замена фильтра салона'));
+  assert.ok(names.includes('Ремонт замка двери'));
+  const door = r.data.tasks.find((x) => x.description === 'Ремонт замка двери');
+  assert.equal(door.work_type_id, null);
+  assert.equal(door.hours, 1.5);
+  assert.equal(door.price, 3000);
+  assert.ok(door.employee_id, 'распределена на сотрудника');
+  assert.equal(r.data.defects.inspector.name, 'Сластунов');
+  assert.equal(r.data.plan_errors.length, 0, JSON.stringify(r.data.plan_errors));
+});

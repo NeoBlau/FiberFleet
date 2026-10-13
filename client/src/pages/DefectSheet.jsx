@@ -22,6 +22,8 @@ export default function DefectSheet() {
   const tractors = useLoad(() => api.get('/vehicles/tractor'));
   const trailers = useLoad(() => api.get('/vehicles/trailer'));
   const works = useLoad(() => api.get('/work-types'));
+  const employees = useLoad(() => api.get('/employees'));
+  const { user } = useApp();
 
   const [draftAvailable, setDraftAvailable] = useState(() => !params.get('tractor') && !params.get('trailer') && !!loadDraft());
   const [head, setHead] = useState(() => ({
@@ -30,6 +32,7 @@ export default function DefectSheet() {
     inspected_at: isoToInput(new Date().toISOString()),
     release_deadline: '',
     tractor_mileage: '', trailer_mileage: '', reefer_hours: '', notes: '',
+    inspector_id: null,
   }));
   const [items, setItems] = useState({});
   const [extra, setExtra] = useState([]);
@@ -52,6 +55,10 @@ export default function DefectSheet() {
     if (head.tractor_id && tractor && !head.trailer_id && tractor.trailer_id) setHead((h) => ({ ...h, trailer_id: tractor.trailer_id }));
   }, [tractor]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (user?.employee_id && !head.inspector_id) setHead((h) => ({ ...h, inspector_id: user.employee_id }));
+  }, [user?.employee_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // автосохранение черновика
   useEffect(() => {
     if (draftAvailable) return;
@@ -63,10 +70,17 @@ export default function DefectSheet() {
     const next = { ...(s[id] || {}), ...patch };
     const filled = (v) => v !== '' && v != null;
     const empty = !next.state && !(next.positions || []).length && !filled(next.value) && !(next.zones || []).length && !next.comment && !(next.options || []).length
-      && !(next.values || []).some(filled) && !Object.values(next.measure || {}).some((m) => m && (filled(m.pad) || filled(m.disc))) && !(next.works || []).length;
+      && !(next.values || []).some(filled) && !Object.values(next.measure || {}).some((m) => m && (filled(m.pad) || filled(m.disc))) && !(next.works || []).length && !(next.custom || []).length;
     const copy = { ...s };
     if (empty) delete copy[id]; else copy[id] = next;
     return copy;
+  });
+
+  // толщина колодок/дисков: одни и те же данные в пункте «Колодки»/«Диски» и в «Показаниях и замерах»
+  const measureItem = checklist?.sections.flatMap((x) => x.items).find((i) => i.kind === 'measure');
+  const setMeasure = (code, field, value) => setItems((s) => {
+    const cur = s.br_measure?.measure || {};
+    return { ...s, br_measure: { ...(s.br_measure || {}), measure: { ...cur, [code]: { ...(cur[code] || {}), [field]: value } } } };
   });
 
   const body = useMemo(() => ({
@@ -76,7 +90,8 @@ export default function DefectSheet() {
     trailer_mileage: head.trailer_mileage === '' ? null : Number(head.trailer_mileage),
     reefer_hours: head.reefer_hours === '' ? null : Number(head.reefer_hours),
     notes: head.notes || null,
-    defects: { items, extra },
+    inspector_id: head.inspector_id || null,
+    defects: { items, extra: extra.filter((e) => e.work_type_id), custom: extra.filter((e) => !e.work_type_id && e.name) },
   }), [head, items, extra]);
 
   // живой предпросмотр плана
@@ -98,6 +113,7 @@ export default function DefectSheet() {
   const submit = () => run(async () => {
     if (!head.tractor_id && !head.trailer_id) throw new Error('Выберите тягач и/или прицеп');
     if (head.tractor_id && head.tractor_mileage === '') throw new Error('Укажите пробег тягача');
+    if (!head.inspector_id) throw new Error('Укажите, кто провёл дефектовку');
     if (tractor?.mileage && head.tractor_mileage !== '' && Number(head.tractor_mileage) < tractor.mileage) {
       if (!window.confirm(`Пробег ${head.tractor_mileage} км меньше последнего записанного (${tractor.mileage} км). Продолжить?`)) return null;
     }
@@ -175,6 +191,10 @@ export default function DefectSheet() {
                   <input className="input" type="number" value={head.reefer_hours} onChange={(e) => setHead((h) => ({ ...h, reefer_hours: e.target.value }))} />
                 </Field>
               ) : null}
+              <Field label="Дефектовку провёл *">
+                <SearchSelect value={head.inspector_id} onChange={(v) => setHead((h) => ({ ...h, inspector_id: v }))} placeholder="Выберите сотрудника"
+                  options={(employees.data || []).filter((e) => e.active && !e.is_external).map((e) => ({ value: e.id, label: `${e.name}${e.position ? ` — ${e.position}` : ''}` }))} />
+              </Field>
               <Field label="Дата составления">
                 <input className="input" type="datetime-local" value={head.inspected_at} onChange={(e) => setHead((h) => ({ ...h, inspected_at: e.target.value }))} />
               </Field>
@@ -184,7 +204,10 @@ export default function DefectSheet() {
             </div>
           </Card>
 
-          {checklist.sections.map((s) => {
+          {!tractor && !trailer && (
+            <div className="alert alert-blue">Сначала выберите тягач и/или прицеп в блоке «Транспортное средство» — по числу осей и типу тормозов появятся схемы колёс, замеры колодок и дисков, давление в контурах.</div>
+          )}
+          {(tractor || trailer) && checklist.sections.map((s) => {
             const visible = s.items.filter((it) => it.vehicle === 'any' || (it.vehicle === 'tractor' ? !!tractor : !!trailer));
             if (!visible.length) return null;
             const simple = visible.filter((it) => it.kind === 'pm' || it.kind === 'yesno');
@@ -198,14 +221,15 @@ export default function DefectSheet() {
                     <ItemRow key={it.id} item={it} ans={items[it.id] || {}} onChange={(p) => setItem(it.id, p)}
                       tractor={tractor} trailer={trailer} hint={hints[it.id]} damageZones={checklist.damageZones}
                       maint={it.maint ? maintByKey[`${it.vehicle === 'trailer' ? 'trailer' : 'tractor'}:${it.maint}`] : null}
-                      mileageNow={it.vehicle === 'trailer' ? head.trailer_mileage : head.tractor_mileage} catalog={works.data || []} />
+                      mileageNow={it.vehicle === 'trailer' ? head.trailer_mileage : head.tractor_mileage} catalog={works.data || []}
+                      measure={items.br_measure?.measure || {}} onMeasure={setMeasure} padMin={measureItem?.padMin} discMin={measureItem?.discMin} />
                   ))}
                 </div>
               </Card>
             );
           })}
 
-          <Card title="Повреждения или требуется ремонт — работы из справочника">
+          <Card title="Повреждения или требуется ремонт — дополнительные работы">
             <ExtraWorks extra={extra} setExtra={setExtra} works={works.data || []} tractor={tractor} trailer={trailer} />
             <Field label="Примечание к дефектовке">
               <textarea className="input" rows={2} value={head.notes} onChange={(e) => setHead((h) => ({ ...h, notes: e.target.value }))} />
@@ -279,8 +303,9 @@ function Seg({ value, onChange, options }) {
   );
 }
 
-function AxleMap({ veh, axles, value, onChange, label }) {
+function AxleMap({ veh, axles, value, onChange, label, measureField, measure = {}, onMeasure, min }) {
   const toggle = (code) => onChange(value.includes(code) ? value.filter((x) => x !== code) : [...value, code]);
+  const mm = (code) => measure[code]?.[measureField];
   return (
     <div className="axlemap">
       <div className="axlemap-title">{label}</div>
@@ -290,12 +315,36 @@ function AxleMap({ veh, axles, value, onChange, label }) {
             {['L', 'R'].map((side, idx) => {
               const code = `${veh}:${a}:${side}`;
               const on = value.includes(code);
-              const btn = <button key={side} type="button" className={cx('wheel', on && 'on')} onClick={() => toggle(code)} title={`Ось ${a}, ${side === 'L' ? 'левая' : 'правая'} сторона`}>{side === 'L' ? 'Л' : 'П'}</button>;
+              const v = measureField ? mm(code) : null;
+              const btn = (
+                <button key={side} type="button" className={cx('wheel', on && 'on', measureField && v !== '' && v != null && 'has-mm')} onClick={() => toggle(code)} title={`Ось ${a}, ${side === 'L' ? 'левая' : 'правая'} сторона`}>
+                  {side === 'L' ? 'Л' : 'П'}{measureField && v !== '' && v != null ? <small>{String(v).replace('.', ',')}</small> : null}
+                </button>
+              );
               return idx === 0 ? [btn, <span key="bar" className="axle-bar">ось {a}</span>] : btn;
             })}
           </div>
         ))}
       </div>
+      {measureField && value.filter((c) => c.startsWith(`${veh}:`)).length > 0 && (
+        <div className="wheel-mm">
+          {value.filter((c) => c.startsWith(`${veh}:`)).map((code) => {
+            const [, a, side] = code.split(':');
+            const n = mm(code);
+            const bad = n !== '' && n != null && min != null && Number(n) < min;
+            return (
+              <label key={code} className="wheel-mm-row">
+                <span>Ось {a}, {side === 'L' ? 'лев.' : 'прав.'} — {measureField === 'pad' ? 'толщина колодки' : 'толщина диска'}</span>
+                <span className="volt">
+                  <input className={cx('input input-sm mm', bad && 'input-bad')} type="number" step="0.5" inputMode="decimal" value={n ?? ''} placeholder="мм"
+                    onChange={(e) => onMeasure(code, measureField, e.target.value)} />
+                  <span>мм</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -342,7 +391,7 @@ function MeasureTable({ veh, vehicle, value, onChange, item }) {
   );
 }
 
-function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, maint, mileageNow, catalog = [] }) {
+function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, maint, mileageNow, catalog = [], measure, onMeasure, padMin, discMin }) {
   let defect = false;
   let control;
   if (item.kind === 'pm') {
@@ -382,8 +431,10 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
     defect = value.length > 0;
     control = (
       <div className="axlemaps">
-        {tractor && <AxleMap veh="tractor" label={`Тягач ${plate(tractor.plate)}`} axles={tractor.axles || 2} value={value} onChange={(p) => onChange({ positions: p })} />}
-        {trailer && <AxleMap veh="trailer" label={`Прицеп ${plate(trailer.plate)}`} axles={trailer.axles || 3} value={value} onChange={(p) => onChange({ positions: p })} />}
+        {tractor && <AxleMap veh="tractor" label={`Тягач ${plate(tractor.plate)}`} axles={tractor.axles || 2} value={value} onChange={(p) => onChange({ positions: p })}
+          measureField={item.measureField === 'disc' && tractor.brake_type === 'drum' ? null : item.measureField} measure={measure} onMeasure={onMeasure} min={item.measureField === 'disc' ? discMin : padMin} />}
+        {trailer && <AxleMap veh="trailer" label={`Прицеп ${plate(trailer.plate)}`} axles={trailer.axles || 3} value={value} onChange={(p) => onChange({ positions: p })}
+          measureField={item.measureField === 'disc' && trailer.brake_type === 'drum' ? null : item.measureField} measure={measure} onMeasure={onMeasure} min={item.measureField === 'disc' ? discMin : padMin} />}
       </div>
     );
   } else if (item.kind === 'circuits') {
@@ -452,7 +503,7 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
       </div>
       {item.kind === 'mileage' && (
         <div className="item-extra">
-          <div className="small muted">Работы из справочника к ТО (можно выбрать, даже если полное ТО не требуется):</div>
+          <div className="small muted">Отдельные работы (можно добавить, даже если полное ТО не требуется): выберите из списка или впишите вручную</div>
           {pickedWorks.length > 0 && (
             <div className="chips">
               {pickedWorks.map((w) => (
@@ -460,6 +511,14 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
               ))}
             </div>
           )}
+          {(ans.custom || []).length > 0 && (
+            <div className="chips">
+              {ans.custom.map((c, i) => (
+                <button key={i} type="button" className="chip on" title="Убрать" onClick={() => onChange({ custom: ans.custom.filter((_, j) => j !== i) })}>{c.name} · {c.hours} ч ×</button>
+              ))}
+            </div>
+          )}
+          <ManualWork onAdd={(c) => onChange({ custom: [...(ans.custom || []), c] })} />
           <div className="pick-work">
             <SearchSelect value={null} onChange={(id) => id && !(ans.works || []).includes(id) && onChange({ works: [...(ans.works || []), id] })}
               groupBy="category" placeholder="+ Добавить работу из списка…"
@@ -494,6 +553,26 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
   );
 }
 
+// Работа, которой нет в справочнике: название и норма времени
+function ManualWork({ onAdd }) {
+  const [name, setName] = useState('');
+  const [hours, setHours] = useState('1');
+  const add = () => {
+    if (!name.trim()) return;
+    onAdd({ name: name.trim(), hours: Number(String(hours).replace(',', '.')) || 1 });
+    setName(''); setHours('1');
+  };
+  return (
+    <div className="manual-work">
+      <input className="input input-sm" placeholder="Вписать работу вручную…" value={name} onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }} />
+      <input className="input input-sm mm" type="number" step="0.1" inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} aria-label="Норма, ч" />
+      <span className="small muted">ч</span>
+      <Button size="sm" icon={Plus} onClick={add} disabled={!name.trim()}>Добавить</Button>
+    </div>
+  );
+}
+
 function ExtraWorks({ extra, setExtra, works, tractor, trailer }) {
   const [wt, setWt] = useState(null);
   const [veh, setVeh] = useState('tractor');
@@ -512,7 +591,7 @@ function ExtraWorks({ extra, setExtra, works, tractor, trailer }) {
       {extra.length > 0 && (
         <ul className="list">
           {extra.map((e, i) => {
-            const w = works.find((x) => x.id === e.work_type_id);
+            const w = e.work_type_id ? works.find((x) => x.id === e.work_type_id) : { name: `${e.name} (вручную, ${e.hours} ч)` };
             return (
               <li key={i} className="row between">
                 <span><Badge tone={PRIORITY[e.priority].tone}>{PRIORITY[e.priority].short}</Badge> {VEH[e.vehicle_type]}: <b>{w?.name}</b>{e.comment ? ` — ${e.comment}` : ''}</span>
@@ -539,7 +618,9 @@ function ExtraWorks({ extra, setExtra, works, tractor, trailer }) {
         </Field>
         <Field label="Комментарий" className="span-2"><input className="input" value={comment} onChange={(e) => setComment(e.target.value)} /></Field>
       </div>
-      <Button icon={Plus} onClick={add} disabled={!wt || !vehOk}>Добавить работу</Button>
+      <Button icon={Plus} onClick={add} disabled={!wt || !vehOk}>Добавить работу из справочника</Button>
+      <div className="field-label" style={{ marginTop: 12 }}>Нет в справочнике? Впишите вручную (ТС и приоритет — как выбрано выше):</div>
+      <ManualWork onAdd={(c) => vehOk && setExtra((x) => [...x, { ...c, vehicle_type: veh, priority: prio, comment }])} />
     </div>
   );
 }

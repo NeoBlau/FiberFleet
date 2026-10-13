@@ -61,6 +61,12 @@ export default function orderRoutes(db) {
     const b = req.body || {};
     if (!b.tractor_id && !b.trailer_id) throw bad('Выберите тягач и/или прицеп');
     if (b.release_deadline && b.release_deadline < nowIso()) throw bad('Дата выпуска с ремонта уже прошла');
+    // кто провёл дефектовку (сотрудник) — хранится вместе с ведомостью
+    if (b.inspector_id) {
+      const emp = db.prepare('SELECT id, name FROM employees WHERE id = ?').get(b.inspector_id);
+      if (!emp) throw bad('Сотрудник, проводивший дефектовку, не найден');
+      b.defects = { ...(b.defects || {}), inspector: { id: emp.id, name: emp.name } };
+    }
     const id = createOrder(db, {
       ...b,
       tractor_mileage: num(b.tractor_mileage), trailer_mileage: num(b.trailer_mileage), reefer_hours: num(b.reefer_hours),

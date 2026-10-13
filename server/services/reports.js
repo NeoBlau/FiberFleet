@@ -296,7 +296,8 @@ export function orderToPdf(order, res, { company, off }) {
   if (order.tractor_plate) doc.text(`Тягач: ${order.tractor_plate} — ${order.tractor_brand || ''} ${order.tractor_model || ''}; пробег: ${order.tractor_mileage?.toLocaleString('ru-RU') ?? '—'} км`);
   if (order.trailer_plate) doc.text(`Прицеп: ${order.trailer_plate} — ${order.trailer_brand || ''} ${order.trailer_model || ''}${order.trailer_mileage ? `; пробег: ${order.trailer_mileage.toLocaleString('ru-RU')} км` : ''}${order.reefer_hours ? `; реф. м/ч: ${order.reefer_hours}` : ''}`);
   if (order.release_deadline) doc.text(`Плановый выпуск с ремонта: ${f(order.release_deadline)}`);
-  if (order.created_by_name) doc.text(`Мастер-приёмщик: ${order.created_by_name}`);
+  if (order.defects?.inspector?.name) doc.text(`Дефектовку провёл: ${order.defects.inspector.name}`);
+  if (order.created_by_name) doc.text(`Внёс в систему: ${order.created_by_name}`);
 
   const zones = order.inspection?.zones || [];
   if (zones.length) {

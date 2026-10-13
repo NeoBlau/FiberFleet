@@ -148,22 +148,7 @@ export const SECTIONS = [
         options: ['Тормозная система::С/у главного тормозного крана', 'Тормозная система::С/у тормозной камеры'],
       },
       {
-        id: 'br_pressure', label: 'Давление в контурах', kind: 'circuits', vehicle: 'tractor', priority: 1, seq: 2, unit: 'бар',
-        circuits: ['Контур 1', 'Контур 2', 'Контур 3'], min: 7.5, max: 12.5, maxDelta: 1,
-        hint: 'После набора давления, двигатель заглушен. Норма 7,5–12,5 бар, разница между контурами не более 1 бар',
-        works: [{ wt: AIR_LEAK }],
-        zone: 'Четырёхконтурный защитный клапан, ресиверы контуров, регулятор давления, компрессор, магистрали контура с низким давлением',
-        related: [{ wt: 'Тормозная система::Диагностика тормозов', scope: 'vehicle', why: 'Давление в контуре вне нормы — проверить тормозную систему' }],
-        relatedItems: ['br_receivers', 'br_leak_tractor'],
-      },
-      {
-        id: 'br_measure', label: 'Замеры колодок и дисков', kind: 'measure', priority: 1, seq: 2,
-        padMin: 4, discMin: 37,
-        hint: 'Остаток накладки колодки и толщина диска, мм. Замена: колодка менее 4 мм, диск менее 37 мм (для диска 45 мм; проверьте норму производителя)',
-        zone: 'Замер штангенциркулем через смотровое окно суппорта или со снятым колесом',
-      },
-      {
-        id: 'br_pads', label: 'Колодки', kind: 'positions', priority: 1, seq: 2,
+        id: 'br_pads', label: 'Колодки', kind: 'positions', priority: 1, seq: 2, measureField: 'pad',
         works: [
           { veh: 'tractor', brake: 'disc', axle: 'front', wt: 'Тормозная система::С/у колодок (диск) передние' },
           { veh: 'tractor', brake: 'disc', axle: 'rear', wt: 'Тормозная система::С/у колодок (диск) задние' },
@@ -193,7 +178,7 @@ export const SECTIONS = [
         ],
       },
       {
-        id: 'br_discs', label: 'Тормозные диски / барабаны', kind: 'positions', priority: 1, seq: 2,
+        id: 'br_discs', label: 'Тормозные диски / барабаны', kind: 'positions', priority: 1, seq: 2, measureField: 'disc',
         works: [
           { veh: 'tractor', brake: 'disc', axle: 'front', wt: 'Тормозная система::C/у тормозного диска(перед)' },
           { veh: 'tractor', brake: 'disc', axle: 'rear', wt: 'Тормозная система::C/у тормозного диска(зад)' },
@@ -395,6 +380,27 @@ export const SECTIONS = [
       },
     ],
   },
+  {
+    id: 'readings', title: 'Показания и замеры',
+    note: 'Давление по контурам и толщина колодок/дисков. Значения сохраняются в ремонте; вне нормы — работа добавляется в план автоматически.',
+    items: [
+      {
+        id: 'br_pressure', label: 'Давление в контурах', kind: 'circuits', vehicle: 'tractor', priority: 1, seq: 2, unit: 'бар',
+        circuits: ['Контур 1', 'Контур 2', 'Контур 3'], min: 7.5, max: 12.5, maxDelta: 1,
+        hint: 'После набора давления, двигатель заглушен. Норма 7,5–12,5 бар, разница между контурами не более 1 бар',
+        works: [{ wt: AIR_LEAK }],
+        zone: 'Четырёхконтурный защитный клапан, ресиверы контуров, регулятор давления, компрессор, магистрали контура с низким давлением',
+        related: [{ wt: 'Тормозная система::Диагностика тормозов', scope: 'vehicle', why: 'Давление в контуре вне нормы — проверить тормозную систему' }],
+        relatedItems: ['br_receivers', 'br_leak_tractor'],
+      },
+        {
+        id: 'br_measure', label: 'Замеры колодок и дисков', kind: 'measure', priority: 1, seq: 2,
+        padMin: 4, discMin: 37,
+        hint: 'Остаток накладки колодки и толщина диска, мм. Замена: колодка менее 4 мм, диск менее 37 мм (для диска 45 мм; проверьте норму производителя)',
+        zone: 'Замер штангенциркулем через смотровое окно суппорта или со снятым колесом',
+      },
+    ],
+  },
 ];
 
 // Плоский индекс пунктов
@@ -445,7 +451,7 @@ export function publicTemplate() {
         id: i.id, label: i.label, kind: i.kind, priority: i.priority,
         vehicle: i.vehicle || s.vehicle || 'any', unit: i.unit, min: i.min, max: i.max, hint: i.hint,
         maint: i.maint, zone: i.zone, checks: i.checks || [], relatedItems: i.relatedItems || [],
-        options: i.options || [], circuits: i.circuits, maxDelta: i.maxDelta, padMin: i.padMin, discMin: i.discMin,
+        options: i.options || [], circuits: i.circuits, maxDelta: i.maxDelta, padMin: i.padMin, discMin: i.discMin, measureField: i.measureField,
       })),
     })),
   };

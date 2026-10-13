@@ -3,6 +3,7 @@
 import { ITEMS, PRIORITIES, SECTIONS, parsePosition, positionLabel } from './checklist.js';
 import { vehicleMaintenance } from './maintenance.js';
 import { fmtDateTime } from '../util.js';
+import { getSettings } from '../settings.js';
 
 export function workTypeIndex(db) {
   const rows = db.prepare('SELECT * FROM work_types WHERE active = 1').all();
@@ -91,7 +92,7 @@ export function generatePlan(db, ctx) {
   const addTask = ({ wt, veh, location, reason, source, seq, priority }) => {
     const vrec = vehicles[veh];
     if (!vrec) return null;
-    const key = `${wt.id}|${veh}|${location || ''}`;
+    const key = `${wt.id ?? `custom:${wt.name.toLowerCase()}`}|${veh}|${location || ''}`;
     const prev = tasks.get(key);
     if (prev) {
       if (!prev.reasons.includes(reason)) prev.reasons.push(reason);
@@ -108,6 +109,16 @@ export function generatePlan(db, ctx) {
     };
     tasks.set(key, t);
     return t;
+  };
+
+  // Работа, вписанная вручную (нет в справочнике): цена — от стоимости нормо-часа
+  const settings = getSettings(db);
+  const customWt = (c) => {
+    const name = String(c?.name || '').trim();
+    if (!name) return null;
+    const hours = Math.max(0.1, Number(String(c.hours ?? '').replace(',', '.')) || 1);
+    const price = Math.round(hours * (Number(settings.norm_hour_price) || 2000));
+    return { id: null, name, category: 'Вручную', hours, price, salary: Math.round(price * (Number(settings.salary_rate) || 0.32)) };
   };
 
   const resolveWt = (key, itemLabel) => {
@@ -176,6 +187,13 @@ export function generatePlan(db, ctx) {
         for (const id of ans.works) {
           const wt = byId.get(Number(id));
           if (wt) addTask({ wt, veh, location: null, reason: `${item.label}: выбрано из справочника${ans.comment ? ` — ${ans.comment}` : ''}`, source: 'maintenance', seq: 2, priority: item.priority });
+        }
+      }
+      if (item.kind === 'mileage' && Array.isArray(ans.custom)) {
+        const veh = item.vehicle === 'trailer' ? 'trailer' : 'tractor';
+        for (const c of ans.custom) {
+          const wt = customWt(c);
+          if (wt) addTask({ wt, veh, location: null, reason: `${item.label}: вписано вручную`, source: 'maintenance', seq: 2, priority: item.priority });
         }
       }
       if (!isDefect(item, ans, maint[item.vehicle === 'trailer' ? 'trailer' : 'tractor'])) continue;
@@ -292,6 +310,14 @@ export function generatePlan(db, ctx) {
     const veh = ex.vehicle_type === 'trailer' ? 'trailer' : 'tractor';
     const pr = Number(ex.priority) || 2;
     addTask({ wt, veh, location: ex.location || null, reason: `Добавлено вручную${ex.comment ? ': ' + ex.comment : ''}`, source: 'manual', seq: wt.name.toLowerCase().startsWith('диагност') ? 1 : 2, priority: pr });
+  }
+
+  // Работы, вписанные вручную (не из справочника)
+  for (const c of defects.custom || []) {
+    const wt = customWt(c);
+    if (!wt) continue;
+    const veh = c.vehicle_type === 'trailer' ? 'trailer' : 'tractor';
+    addTask({ wt, veh, location: c.location || null, reason: `Вписано вручную${c.comment ? ': ' + c.comment : ''}`, source: 'manual', seq: 2, priority: Number(c.priority) || 2 });
   }
 
   const list = [...tasks.values()].map((t) => ({ ...t, reason: t.reasons.join('; ') }));
