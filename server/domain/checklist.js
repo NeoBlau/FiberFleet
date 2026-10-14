@@ -10,9 +10,10 @@
 //   damage    — фиксация новых повреждений (выделить цветом), работ не создаёт
 //   circuits  — давление по контурам (бар), дефект если вне [min, max] или разница больше maxDelta
 //   measure   — замеры колодок/дисков по позициям (мм); ниже padMin/discMin → позиция в «Колодки»/«Диски»
+//   percent   — остаток колодок тягача в % по колёсам (перед/зад, лев./прав.); ниже min → позиция в «Колодки»
 //
 // Работы задаются ссылкой "Категория::Название" на справочник. Фильтры подбора:
-//   veh: tractor|trailer, axle: front|rear, brake: disc|drum.
+//   veh: tractor|trailer, axle: front|rear, brake: disc|drum, brand / notBrand: марка ТС (подстрока).
 // Приоритет: 1 — критично (безопасность, выпуск запрещён), 2 — высокий, 3 — плановый, 4 — по согласованию.
 // seq: 0 — мойка, 1 — осмотр/диагностика, 2 — ремонт, 3 — регулировки после ремонта. Внутри ремонта по одному ТС
 // задачи с меньшим seq выполняются раньше.
@@ -180,18 +181,20 @@ export const SECTIONS = [
       {
         id: 'br_discs', label: 'Тормозные диски / барабаны', kind: 'positions', priority: 1, seq: 2, measureField: 'disc',
         works: [
-          { veh: 'tractor', brake: 'disc', axle: 'front', wt: 'Тормозная система::C/у тормозного диска(перед)' },
-          { veh: 'tractor', brake: 'disc', axle: 'rear', wt: 'Тормозная система::C/у тормозного диска(зад)' },
+          { veh: 'tractor', brake: 'disc', axle: 'front', brand: 'DAF', wt: 'Тормозная система::C/у тормозного диска(перед) ДАФ' },
+          { veh: 'tractor', brake: 'disc', axle: 'front', notBrand: 'DAF', wt: 'Тормозная система::C/у тормозного диска(перед) Мерседес МАН' },
+          { veh: 'tractor', brake: 'disc', axle: 'rear', brand: 'DAF', wt: 'Тормозная система::C/у тормозного диска(зад) ДАФ' },
+          { veh: 'tractor', brake: 'disc', axle: 'rear', notBrand: 'DAF', wt: 'Тормозная система::C/у тормозного диска(зад) Мерседес МАН' },
           { veh: 'tractor', brake: 'drum', axle: 'front', wt: 'Тормозная система::С/у барабана (перед)' },
           { veh: 'tractor', brake: 'drum', axle: 'rear', wt: 'Тормозная система::С/у барабана (зад)' },
-          { veh: 'trailer', brake: 'disc', wt: 'Тормозная система::C/у тормозного диска(зад)' },
+          { veh: 'trailer', brake: 'disc', wt: 'Ходовая часть прицепа::Замена торм диска без блок подшипником' },
           { veh: 'trailer', brake: 'drum', wt: 'Прицеп::С/у тормозного барабана' },
         ],
         zone: '{pos}: толщина диска/диаметр барабана, трещины, задиры, биение',
         related: [{ wt: AXLE_INSPECTION, scope: 'axle', why: 'Износ диска/барабана — проверка оси и колодок' }],
         checks: ['При замене диска колодки на этой оси менять обязательно'],
         relatedItems: ['br_pads', 'br_calipers'],
-        options: ['Прицеп::Проточка тормозного барабана'],
+        options: ['Прицеп::Проточка тормозного барабана', 'Ходовая часть прицепа::Замена торм диска с блок подшипником'],
       },
       {
         id: 'br_spring', label: 'Энергоаккумулятор', kind: 'positions', priority: 1, seq: 2,
@@ -219,7 +222,7 @@ export const SECTIONS = [
         works: [{ wt: 'Дополнительные работы::Устранение течи антифриза (патрубки, хомуты)' }],
         zone: 'Радиатор, патрубки и хомуты, помпа (дренажное отверстие), расширительный бачок, отопитель, теплообменник',
         checks: ['Эмульсия в масле (антифриз в масле → прокладка ГБЦ/теплообменник)', 'Уровень ОЖ'],
-        options: ['ДВС::Помпа', 'ДВС::С/у радиатора +интеркуллер', 'ДВС::Замена масленого радиатора (теплообменник)'],
+        options: ['ДВС::Помпа', 'ДВС::С/у радиатора +интеркуллер без сохранения фриона', 'ДВС::Замена масленого радиатора (теплообменник)'],
       },
     ],
   },
@@ -255,7 +258,7 @@ export const SECTIONS = [
     items: [
       {
         id: 'dl_crosses', label: 'Крестовины', kind: 'pm', priority: 2, seq: 2,
-        works: [{ wt: 'Трансмиссия::Замена креставины карданного вала' }],
+        works: [{ wt: 'Трансмиссия::Замена крестовины карданного вала' }],
         zone: 'Карданные валы: люфт крестовин (покачать вилку), шлицы, подвесной подшипник, болты фланцев',
         checks: ['Сальник хвостовика редуктора', 'Сальник выходного вала КПП'],
         options: ['Трансмиссия::С/у карданного вала', 'Трансмиссия::С/у подвесного подшипника', 'Трансмиссия::Шприцевание (1 точка)'],
@@ -382,7 +385,7 @@ export const SECTIONS = [
   },
   {
     id: 'readings', title: 'Показания и замеры',
-    note: 'Давление по контурам и толщина колодок/дисков. Значения сохраняются в ремонте; вне нормы — работа добавляется в план автоматически.',
+    note: 'Давление по контурам, остаток колодок тягача в % и толщина колодок/дисков в мм. Значения сохраняются в ремонте; вне нормы — работа добавляется в план автоматически.',
     items: [
       {
         id: 'br_pressure', label: 'Давление в контурах', kind: 'circuits', vehicle: 'tractor', priority: 1, seq: 2, unit: 'бар',
@@ -393,7 +396,13 @@ export const SECTIONS = [
         related: [{ wt: 'Тормозная система::Диагностика тормозов', scope: 'vehicle', why: 'Давление в контуре вне нормы — проверить тормозную систему' }],
         relatedItems: ['br_receivers', 'br_leak_tractor'],
       },
-        {
+      {
+        id: 'br_pads_pct', label: 'Остаток колодок тягача, %', kind: 'percent', vehicle: 'tractor', priority: 1, seq: 2, unit: '%',
+        min: 15, warn: 30, target: 'br_pads',
+        hint: 'По бортовому компьютеру / диагностике: перед и зад, левая и правая сторона. Менее 15 % — замена колодок, 15–30 % — скоро замена',
+        zone: 'Датчики износа колодок, суппорта',
+      },
+      {
         id: 'br_measure', label: 'Замеры колодок и дисков', kind: 'measure', priority: 1, seq: 2,
         padMin: 4, discMin: 37,
         hint: 'Остаток накладки колодки и толщина диска, мм. Замена: колодка менее 4 мм, диск менее 37 мм (для диска 45 мм; проверьте норму производителя)',
@@ -451,7 +460,7 @@ export function publicTemplate() {
         id: i.id, label: i.label, kind: i.kind, priority: i.priority,
         vehicle: i.vehicle || s.vehicle || 'any', unit: i.unit, min: i.min, max: i.max, hint: i.hint,
         maint: i.maint, zone: i.zone, checks: i.checks || [], relatedItems: i.relatedItems || [],
-        options: i.options || [], circuits: i.circuits, maxDelta: i.maxDelta, padMin: i.padMin, discMin: i.discMin, measureField: i.measureField,
+        options: i.options || [], circuits: i.circuits, maxDelta: i.maxDelta, padMin: i.padMin, discMin: i.discMin, warn: i.warn, measureField: i.measureField,
       })),
     })),
   };

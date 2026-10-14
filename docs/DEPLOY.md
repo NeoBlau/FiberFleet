@@ -189,6 +189,15 @@ runuser -u fiberfleet -- env FF_DATA_DIR=/var/lib/fiberfleet node tools/fleet-up
 ```
 Утилита ничего не удаляет; ТС, которых нет в сводке, только перечисляет.
 
+### Актуализация прайса (справочник работ)
+После обновления программы, если в ней пришёл новый прайс (`server/seed/catalog.json`):
+```bash
+cd /opt/fiberfleet
+runuser -u fiberfleet -- env FF_DATA_DIR=/var/lib/fiberfleet node tools/catalog-update.mjs --dry-run   # что изменится
+runuser -u fiberfleet -- env FF_DATA_DIR=/var/lib/fiberfleet node tools/catalog-update.mjs             # применить
+```
+Флаг `--apply-open` дополнительно пересчитывает норму и цену в работах, которые ещё не начаты. Ничего не удаляется; работы, которых нет в прайсе, только перечисляются.
+
 ### Восстановление из резервной копии
 ```bash
 systemctl stop fiberfleet

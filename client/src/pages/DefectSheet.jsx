@@ -70,7 +70,8 @@ export default function DefectSheet() {
     const next = { ...(s[id] || {}), ...patch };
     const filled = (v) => v !== '' && v != null;
     const empty = !next.state && !(next.positions || []).length && !filled(next.value) && !(next.zones || []).length && !next.comment && !(next.options || []).length
-      && !(next.values || []).some(filled) && !Object.values(next.measure || {}).some((m) => m && (filled(m.pad) || filled(m.disc))) && !(next.works || []).length && !(next.custom || []).length;
+      && !(next.values || []).some(filled) && !Object.values(next.measure || {}).some((m) => m && (filled(m.pad) || filled(m.disc))) && !(next.works || []).length && !(next.custom || []).length
+      && !Object.values(next.pct || {}).some(filled);
     const copy = { ...s };
     if (empty) delete copy[id]; else copy[id] = next;
     return copy;
@@ -140,7 +141,7 @@ export default function DefectSheet() {
   // подсветка связанных пунктов
   const allItems = checklist.sections.flatMap((s) => s.items);
   const isMarked = (it, a) => a && (a.state === 'defect' || (a.positions || []).length || (it.kind === 'volt' && a.value !== '' && a.value != null && (Number(a.value) < it.min || Number(a.value) > it.max))
-    || (it.kind === 'circuits' && circuitsBad(it, a)));
+    || (it.kind === 'circuits' && circuitsBad(it, a)) || (it.kind === 'percent' && pctLow(it, a).length));
   const hints = {};
   for (const it of allItems) {
     if (!isMarked(it, items[it.id])) continue;
@@ -356,6 +357,41 @@ function circuitsBad(item, ans) {
   return vals.some((v) => v < item.min || v > item.max) || (item.maxDelta != null && vals.length > 1 && Math.max(...vals) - Math.min(...vals) > item.maxDelta);
 }
 
+const pctLow = (item, ans) => Object.entries(ans?.pct || {}).filter(([, v]) => numOrNull(v) != null && numOrNull(v) < item.min);
+
+// Остаток колодок тягача в %: перед / зад × лев. / прав.
+function PercentTable({ vehicle, value, onChange, item }) {
+  const axles = vehicle.axles || 2;
+  const row = (a) => (a === 1 ? 'Перед' : a === 2 ? 'Зад' : `Зад (ось ${a})`);
+  return (
+    <table className="measure-table pct-table">
+      <thead><tr><th /><th>Левая</th><th>Правая</th></tr></thead>
+      <tbody>
+        {Array.from({ length: axles }, (_, i) => i + 1).map((a) => (
+          <tr key={a}>
+            <th>{row(a)}</th>
+            {['L', 'R'].map((side) => {
+              const code = `tractor:${a}:${side}`;
+              const v = value[code] ?? '';
+              const n = numOrNull(v);
+              return (
+                <td key={side}>
+                  <span className="pct">
+                    <input className={cx('input input-sm mm', n != null && n < item.min && 'input-bad', n != null && n >= item.min && n < item.warn && 'input-warn', n != null && n >= item.warn && 'input-good')}
+                      type="number" min="0" max="100" step="1" inputMode="numeric" value={v} placeholder="%" aria-label={`${row(a)} ${side === 'L' ? 'левая' : 'правая'}, %`}
+                      onChange={(e) => onChange({ ...value, [code]: e.target.value })} />
+                    <span>%</span>
+                  </span>
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 // Замеры колодок и дисков по осям: колодка / диск, мм
 function MeasureTable({ veh, vehicle, value, onChange, item }) {
   const axles = vehicle.axles || (veh === 'tractor' ? 2 : 3);
@@ -459,6 +495,15 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
         })}
       </div>
     );
+  } else if (item.kind === 'percent') {
+    const low = pctLow(item, ans);
+    defect = low.length > 0;
+    control = (
+      <div className="axlemaps">
+        {tractor ? <PercentTable vehicle={tractor} value={ans.pct || {}} item={item} onChange={(m) => onChange({ pct: m })} /> : <span className="muted small">Выберите тягач</span>}
+        {defect && <div className="text-red small w-100">Менее {item.min} %: {low.length} поз. — замена колодок будет добавлена в план автоматически</div>}
+      </div>
+    );
   } else if (item.kind === 'measure') {
     const value = ans.measure || {};
     const low = Object.entries(value).filter(([code, v]) => {
@@ -488,7 +533,7 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
     );
   }
 
-  const wide = ['positions', 'damage', 'measure', 'circuits'].includes(item.kind);
+  const wide = ['positions', 'damage', 'measure', 'circuits', 'percent'].includes(item.kind);
   const pickedWorks = (ans.works || []).map((id) => catalog.find((w) => w.id === id)).filter(Boolean);
   return (
     <div className={cx('item', defect && 'item-defect', hint && !defect && 'item-hint', wide && 'item-wide')}>
@@ -526,7 +571,7 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
           </div>
         </div>
       )}
-      {defect && item.kind !== 'damage' && item.kind !== 'measure' && (
+      {defect && item.kind !== 'damage' && item.kind !== 'measure' && item.kind !== 'percent' && (
         <div className="item-extra">
           {item.zone && <div className="zone"><MapPin size={14} /> {item.zone.replace('{pos}', (ans.positions || []).length ? 'отмеченные позиции' : 'узел')}</div>}
           {item.checks?.length > 0 && <div className="muted small">Проверить также: {item.checks.join('; ')}</div>}

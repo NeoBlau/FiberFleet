@@ -48,11 +48,18 @@ function isDefect(item, ans, maintByKey) {
 const toNum = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 const circuitValues = (ans) => (ans.values || []).map(toNum).filter((v) => v != null);
 const fmtNum = (v) => String(v).replace('.', ',');
+const pctLabel = (code) => {
+  const { axle, side } = parsePosition(code);
+  return `${axle === 1 ? 'перед' : axle === 2 ? 'зад' : `зад (ось ${axle})`} ${side === 'L' ? 'лев.' : 'прав.'}`;
+};
 
 function matchWorks(item, veh, vehicleRec, axle) {
   return (item.works || []).filter((w) => {
     if (w.veh && w.veh !== veh) return false;
     if (w.brake && w.brake !== (vehicleRec?.brake_type || 'disc')) return false;
+    const brand = `${vehicleRec?.brand || ''} ${vehicleRec?.model || ''}`.toUpperCase();
+    if (w.brand && !brand.includes(w.brand.toUpperCase())) return false;
+    if (w.notBrand && brand.includes(w.notBrand.toUpperCase())) return false;
     if (w.axle) {
       const isFront = veh === 'tractor' && axle === 1;
       if ((w.axle === 'front') !== isFront) return false;
@@ -165,6 +172,23 @@ export function generatePlan(db, ctx) {
     };
     if (lowPad) mark('br_pads', 'колодок');
     if (lowDisc) mark('br_discs', 'дисков');
+  }
+
+  // Остаток колодок тягача в %: ниже нормы → позиция в «Колодки»
+  for (const item of Object.values(ITEMS).filter((i) => i.kind === 'percent')) {
+    for (const [code, raw] of Object.entries(answers[item.id]?.pct || {})) {
+      const v = toNum(raw);
+      const p = parsePosition(code);
+      if (v == null || !vehicles[p.veh]) continue;
+      const low = v < item.min;
+      readings.push({ item: item.id, label: `Колодки тягача: ${pctLabel(code)}`, text: `${fmtNum(v)} %${!low && item.warn != null && v < item.warn ? ' (скоро замена)' : ''}`, bad: low });
+      if (low) {
+        const a = { ...(answers[item.target] || {}) };
+        a.positions = [...new Set([...(a.positions || []), code])];
+        a.comment = [a.comment, `остаток колодок менее ${item.min} %`].filter(Boolean).filter((x, i, arr) => arr.indexOf(x) === i).join('; ');
+        answers[item.target] = a;
+      }
+    }
   }
 
   // Сначала — дефекты, затем связанные проверки (чтобы не дублировать уже назначенные работы)

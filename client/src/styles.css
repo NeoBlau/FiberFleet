@@ -160,6 +160,7 @@ ul { margin: 0; }
 .input-sm { min-height: 32px; padding: 5px 9px; font-size: 13px; }
 .input-bad { border-color: var(--red); background: var(--red-bg); }
 .input-good { border-color: var(--green); }
+.input-warn { border-color: var(--amber); background: var(--amber-bg, transparent); }
 textarea.input { resize: vertical; }
 select.input { padding-right: 28px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 14px; }
@@ -444,6 +445,8 @@ select.input { padding-right: 28px; }
 .measure-table th { font-weight: 600; color: var(--muted); font-size: 12px; padding: 2px 6px; text-align: center; white-space: nowrap; }
 .measure-table tbody th { text-align: left; }
 .measure-table td { padding: 2px 3px; }
+.pct { display: inline-flex; align-items: center; gap: 3px; }
+.pct-table .mm { width: 64px; }
 .input.mm { width: 70px; text-align: center; }
 .w-100 { flex-basis: 100%; }
 .pick-work { max-width: 460px; }

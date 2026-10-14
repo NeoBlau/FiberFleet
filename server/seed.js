@@ -10,10 +10,21 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const load = (f) => JSON.parse(fs.readFileSync(path.join(here, 'seed', f), 'utf8'));
 
 const TRAILER_CATEGORIES = new Set(['Прицеп', 'Ходовая часть прицепа']);
+
+// Для какого ТС работа (подсказка при выборе из справочника)
+export function appliesToFor(category, name) {
+  const key = `${category}::${name}`;
+  if (ANY_VEHICLE.has(key) || category === 'Мойка' || category === 'Прочие работы') return 'any';
+  return TRAILER_CATEGORIES.has(category) ? 'trailer' : 'tractor';
+}
 const ANY_VEHICLE = new Set([
   'Тормозная система::Осмотр оси (суппорта, колодки,диски,амортизатора)',
   'Тормозная система::С/у колодок (диск) задние',
-  'Тормозная система::C/у тормозного диска(зад)',
+  'Тормозная система::C/у тормозного диска(зад) Мерседес МАН',
+  'Тормозная система::C/у тормозного диска(зад) ДАФ',
+  'Ходовая часть прицепа::Замена торм диска без блок подшипником',
+  'Ходовая часть прицепа::Замена торм диска с блок подшипником',
+  'Тормозная система::Регулировка тормозов 1 колесо',
   'Тормозная система::С/у суппорта зад',
   'Тормозная система::С/у энергоаккумулятора',
   'Тормозная система::С/у тормозной камеры',
@@ -23,8 +34,8 @@ const ANY_VEHICLE = new Set([
 ]);
 
 // Работы, которых нет в прайсе, но которые нужны правилам дефектовки.
-// Норма и цена рассчитаны от нормо-часа 2000 ₽ и ставки ЗП 32 % — проверьте и скорректируйте.
-const EXTRA_WORKS = [
+// Норма и цена рассчитаны от нормо-часа 2640 ₽ с НДС и ЗП 640 ₽/н-ч — проверьте и скорректируйте.
+export const EXTRA_WORKS = [
   ['Поиск и устранение утечки воздуха', 'any', 1],
   ['Слив конденсата, проверка осушителя воздуха', 'tractor', 0.5],
   ['Замена ламп/фонарей/фар', 'any', 0.5],
@@ -43,13 +54,15 @@ const EXTRA_WORKS = [
   ['Обслуживание реф. установки (по согласованию)', 'trailer', 1],
 ];
 
-const EMPLOYEES = [
+export const EMPLOYEES = [
   { name: 'Чешуин', position: 'Диагност-электрик', qualification: 'Компьютерная диагностика, электрика', level: 3, specializations: ['Автомобиль', 'Дополнительные работы'] },
   { name: 'Жуйков', position: 'Моторист', qualification: 'Капитальный ремонт ДВС, топливная аппаратура', level: 3, specializations: ['ДВС'] },
   { name: 'Жужгин', position: 'Слесарь по ремонту а/м', qualification: 'ДВС, тормозная система', level: 2, specializations: ['ДВС', 'Тормозная система'] },
   { name: 'Сластунов', position: 'Слесарь-ходовик', qualification: 'Ходовая, трансмиссия, рулевое', level: 3, specializations: ['Трансмиссия', 'Подвеска', 'Рулевое управление'] },
   { name: 'Козырев', position: 'Слесарь по ремонту а/м', qualification: 'Трансмиссия, снятие/установка агрегатов', level: 3, specializations: ['Трансмиссия', 'Подвеска', 'ДВС'] },
   { name: 'Козлов', position: 'Слесарь по ремонту прицепов', qualification: 'Ходовая и тормоза прицепов', level: 2, specializations: ['Прицеп', 'Ходовая часть прицепа'] },
+  { name: 'Скобелкин', position: 'Слесарь по ремонту а/м', qualification: 'Трансмиссия, подвеска, тормоза', level: 2, specializations: ['Трансмиссия', 'Подвеска'] },
+  { name: 'Нелидов', position: 'Слесарь по ремонту а/м', qualification: 'Тормозная система, подвеска', level: 2, specializations: ['Тормозная система', 'Подвеска'] },
   { name: 'Токарь', position: 'Токарь', qualification: 'токарь', level: 2, specializations: [], general_access: 0 },
   { name: 'Сторонний сервис', position: 'Подрядчик', qualification: 'сервис', level: 2, specializations: [], general_access: 0, is_external: 1 },
 ];
@@ -75,8 +88,8 @@ export const DEFAULT_SETTINGS = {
   work_days: [1, 2, 3, 4, 5],     // пн–пт
   holidays: [],                   // ['2026-11-04', ...]
   max_workers_per_vehicle: 2,
-  norm_hour_price: 2000,
-  salary_rate: 0.32,
+  norm_hour_price: 2640,          // нормо-час с НДС (2200 ₽ без НДС) по прайсу заказчика
+  salary_rate: 0.2424,            // ЗП 640 ₽ с нормо-часа
 };
 
 export function seedIfEmpty(db) {
@@ -107,9 +120,7 @@ export function seedIfEmpty(db) {
     let n = 0;
     const codeFor = () => `W${String(++n).padStart(3, '0')}`;
     for (const w of catalog) {
-      const key = `${w.category}::${w.name}`;
-      const appliesTo = ANY_VEHICLE.has(key) || w.category === 'Мойка' ? 'any'
-        : TRAILER_CATEGORIES.has(w.category) ? 'trailer' : 'tractor';
+      const appliesTo = appliesToFor(w.category, w.name);
       const access = (w.access || []).filter((a) => a.toLowerCase() !== 'токарь');
       const turner = (w.access || []).some((a) => a.toLowerCase() === 'токарь');
       const id = insWt.run({

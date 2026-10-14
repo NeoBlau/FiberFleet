@@ -38,7 +38,7 @@ test('замеры: колодка и диск ниже нормы → заме�
   assert.equal(pads.length, 1);
   assert.equal(pads[0].location, 'Тягач, ось 2, лев.');
   assert.ok(pads[0].reason.includes('по замеру'));
-  assert.ok(r.data.tasks.some((x) => x.description === 'C/у тормозного диска(зад)' && x.location === 'Тягач, ось 2, лев.'));
+  assert.ok(r.data.tasks.some((x) => x.description === 'C/у тормозного диска(зад) Мерседес МАН' && x.location === 'Тягач, ось 2, лев.'));
   assert.ok(!r.data.tasks.some((x) => x.location === 'Тягач, ось 2, прав.' && /колодок|диска/.test(x.description)));
   const rd = r.data.readings.filter((x) => x.item === 'br_measure');
   assert.equal(rd.length, 2);
@@ -123,8 +123,36 @@ test('работы, вписанные вручную (ТО и общий спи
   const door = r.data.tasks.find((x) => x.description === 'Ремонт замка двери');
   assert.equal(door.work_type_id, null);
   assert.equal(door.hours, 1.5);
-  assert.equal(door.price, 3000);
+  assert.equal(door.price, 3960); // 1,5 н/ч × 2640 ₽
   assert.ok(door.employee_id, 'распределена на сотрудника');
   assert.equal(r.data.defects.inspector.name, 'Сластунов');
   assert.equal(r.data.plan_errors.length, 0, JSON.stringify(r.data.plan_errors));
+});
+
+test('замена тормозного диска зависит от марки: DAF → «ДАФ», FAW/MAN → «Мерседес МАН»', async () => {
+  const daf = await tractorByPlate('К360НО95');
+  const faw = await tractorByPlate('Т970ОН58');
+  const body = (t) => ({ tractor_id: t.id, defects: { items: { br_discs: { positions: ['tractor:1:L'] } } } });
+  const a = (await api('POST', '/orders/preview', body(daf))).data.tasks.map((x) => x.description);
+  const b = (await api('POST', '/orders/preview', body(faw))).data.tasks.map((x) => x.description);
+  assert.ok(a.includes('C/у тормозного диска(перед) ДАФ'), a.join(', '));
+  assert.ok(b.includes('C/у тормозного диска(перед) Мерседес МАН'), b.join(', '));
+});
+
+test('остаток колодок тягача в %: перед/зад, лев./прав.; менее 15 % → замена на этом колесе', async () => {
+  const t = await tractorByPlate('В178МЕ164');
+  const r = await api('POST', '/orders/preview', {
+    tractor_id: t.id,
+    defects: { items: { br_pads_pct: { pct: { 'tractor:1:L': '60', 'tractor:1:R': '55', 'tractor:2:L': '10', 'tractor:2:R': '25' } } } },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const pads = r.data.tasks.filter((x) => /С\/у колодок/.test(x.description));
+  assert.equal(pads.length, 1, pads.map((x) => x.description + ' ' + x.location).join('; '));
+  assert.equal(pads[0].description, 'С/у колодок (диск) задние');
+  assert.equal(pads[0].location, 'Тягач, ось 2, лев.');
+  const rd = r.data.readings.filter((x) => x.item === 'br_pads_pct');
+  assert.equal(rd.length, 4);
+  assert.ok(rd.find((x) => x.label.endsWith('зад лев.')).bad);
+  assert.match(rd.find((x) => x.label.endsWith('зад прав.')).text, /25 % \(скоро замена\)/);
+  assert.ok(!rd.find((x) => x.label.endsWith('перед лев.')).bad);
 });

@@ -80,6 +80,17 @@ node tools/fleet-update.mjs             # применить
 ```
 На сервере: `cd /opt/fiberfleet && runuser -u fiberfleet -- env FF_DATA_DIR=/var/lib/fiberfleet node tools/fleet-update.mjs`.
 
+## Актуализация прайса (справочник работ)
+
+Прайс хранится в `server/seed/catalog.json`. Чтобы перенести новые нормы времени, цены, ЗП и допуски в работающую базу (работы не удаляются, история ремонтов не меняется; добавляются новые работы и сотрудники из допусков; стоимость нормо-часа 2000 → 2640 ₽, если её не меняли):
+
+```bash
+node tools/catalog-update.mjs --dry-run      # посмотреть изменения
+node tools/catalog-update.mjs                # применить
+node tools/catalog-update.mjs --apply-open   # + пересчитать ещё не начатые работы
+```
+На сервере: `cd /opt/fiberfleet && runuser -u fiberfleet -- env FF_DATA_DIR=/var/lib/fiberfleet node tools/catalog-update.mjs`.
+
 ## Обмен с 1С
 
 - **Номенклатура в FiberFleet**: файл XLSX/CSV из 1С (колонки «Код», «Артикул», «Наименование», «Ед. изм.», «Цена») или CommerceML (`import.xml`, `offers.xml`). Сопоставление по коду 1С.
