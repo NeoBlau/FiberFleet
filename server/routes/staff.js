@@ -136,18 +136,26 @@ export default function staffRoutes(db) {
     if (!w) throw notFound('Работа');
     const data = wtFields(req.body || {});
     if (req.body.code !== undefined && req.body.code.trim()) data.code = req.body.code.trim();
+    const hoursChanged = data.hours !== undefined && Number(data.hours) !== Number(w.hours);
+    const priceChanged = data.price !== undefined && Number(data.price) !== Number(w.price);
+    if ((hoursChanged || priceChanged) && (data.salary === undefined || Number(data.salary) === Number(w.salary))) {
+      const oldBase = priceChanged ? Number(w.price) : Number(w.hours);
+      const newBase = priceChanged ? Number(data.price) : Number(data.hours);
+      if (w.salary != null && oldBase > 0) data.salary = Math.round(Number(w.salary) * newBase / oldBase);
+    }
     if (Object.keys(data).length) {
       db.prepare(`UPDATE work_types SET ${Object.keys(data).map((c) => `${c} = @${c}`).join(', ')}, updated_at = @ts WHERE id = @id`)
         .run({ ...data, ts: nowIso(), id: w.id });
     }
     if (Array.isArray(req.body.access)) setWorkAccess(db, w.id, req.body.access);
-    // обновить цену/норму в ещё не начатых работах
-    if (req.body.apply_to_open) {
+    // Справочник является источником нормы, цены и зарплаты для всех ещё не начатых работ.
+    // Пересчитываем открытые задания автоматически при редактировании этих полей.
+    if (['hours', 'price', 'salary'].some((field) => field in data)) {
       db.prepare(`UPDATE tasks SET hours = @hours, price = @price, salary = @salary WHERE work_type_id = @id AND status = 'planned'`)
         .run({ id: w.id, hours: data.hours ?? w.hours, price: data.price ?? w.price, salary: data.salary ?? w.salary });
     }
     audit(db, req.user, 'work_type', w.id, 'update', JSON.stringify(req.body));
-    if (req.body.access || 'access_all' in data || 'external' in data || req.body.apply_to_open) replan(db);
+    if (req.body.access || 'access_all' in data || 'external' in data || ['hours', 'price', 'salary'].some((field) => field in data)) replan(db);
     res.json({ ok: true });
   });
 

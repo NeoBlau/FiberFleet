@@ -215,7 +215,7 @@ export default function orderRoutes(db) {
     const planFields = ['priority', 'deadline', 'hours', 'description', 'location', 'comment', 'price', 'salary', 'seq'];
     const reassign = b.employee_id !== undefined || b.start_at !== undefined || b.unlock !== undefined;
     if (planFields.some((f) => b[f] !== undefined) && !can(req.user, 'plan.write')) throw new HttpError(403, 'Недостаточно прав для корректировки плана');
-    if (reassign && !can(req.user, 'tasks.reassign')) throw new HttpError(403, 'Переназначать задачи может только администратор');
+    if (reassign && !can(req.user, 'tasks.reassign')) throw new HttpError(403, 'Переназначать задачи может администратор или оператор');
     if (['done', 'cancelled'].includes(t.status) && planFields.some((f) => ['priority', 'deadline', 'hours'].includes(f) && b[f] !== undefined)) {
       throw bad('Работа уже закрыта');
     }

@@ -106,7 +106,7 @@ function EmployeeDialog({ id, canWrite, onClose, onSaved }) {
           </div>
           <label className="check"><input type="checkbox" checked={form.general_access} onChange={(x) => set('general_access', x.target.checked)} disabled={!canWrite} /> Допущен к работам с допуском «Все»</label>
           <label className="check"><input type="checkbox" checked={form.is_external} onChange={(x) => set('is_external', x.target.checked)} disabled={!canWrite} /> Сторонний сервис (без ограничения загрузки)</label>
-          <label className="check"><input type="checkbox" checked={form.active} onChange={(x) => set('active', x.target.checked)} disabled={!canWrite} /> Активен</label>
+          <label className="check"><input type="checkbox" checked={form.active} onChange={(x) => set('active', x.target.checked)} disabled={!canWrite} /> Доступен для назначения (снимите при больничном/отсутствии)</label>
         </div>
       )}
       {tab === 'access' && (

@@ -2,6 +2,7 @@ node_modules/
 client/node_modules/
 client/dist/
 data/
+orig/
 *.log
 .DS_Store
 FiberFleet-full-source.zip

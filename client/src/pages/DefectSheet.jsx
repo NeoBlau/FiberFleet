@@ -71,7 +71,7 @@ export default function DefectSheet() {
     const filled = (v) => v !== '' && v != null;
     const empty = !next.state && !(next.positions || []).length && !filled(next.value) && !(next.zones || []).length && !next.comment && !(next.options || []).length
       && !(next.values || []).some(filled) && !Object.values(next.measure || {}).some((m) => m && (filled(m.pad) || filled(m.disc))) && !(next.works || []).length && !(next.custom || []).length
-      && !Object.values(next.pct || {}).some(filled);
+      && !Object.values(next.pct || {}).some(filled) && !Object.keys(next.position_states || {}).length;
     const copy = { ...s };
     if (empty) delete copy[id]; else copy[id] = next;
     return copy;
@@ -209,14 +209,20 @@ export default function DefectSheet() {
             <div className="alert alert-blue">Сначала выберите тягач и/или прицеп в блоке «Транспортное средство» — по числу осей и типу тормозов появятся схемы колёс, замеры колодок и дисков, давление в контурах.</div>
           )}
           {(tractor || trailer) && checklist.sections.map((s) => {
-            const visible = s.items.filter((it) => it.vehicle === 'any' || (it.vehicle === 'tractor' ? !!tractor : !!trailer));
+            const visible = s.items.filter((it) => (it.vehicle === 'any' || (it.vehicle === 'tractor' ? !!tractor : !!trailer))
+              && (!it.requiresReefer || !!trailer?.has_reefer));
             if (!visible.length) return null;
             const simple = visible.filter((it) => it.kind === 'pm' || it.kind === 'yesno');
             return (
-              <Card key={s.id} title={s.title} className="defect-section" actions={simple.length > 1 && (
-                <Button size="sm" variant="ghost" icon={Check} onClick={() => simple.forEach((it) => { if (!items[it.id]?.state) setItem(it.id, { state: 'ok' }); })}>Остальное в норме</Button>
+              <Card key={s.id} title={s.title} className="defect-section" actions={(simple.length > 1 || s.id === 'damage') && (
+                <Button size="sm" variant="ghost" icon={Check} onClick={() => s.id === 'damage'
+                  ? visible.forEach((it) => setItem(it.id, { zones: [], state: 'ok', comment: '' }))
+                  : simple.forEach((it) => { if (!items[it.id]?.state) setItem(it.id, { state: 'ok' }); })}>{s.id === 'damage' ? 'Новых повреждений нет' : 'Остальное в норме'}</Button>
               )}>
                 {s.note && <p className="muted small">{s.note}</p>}
+                {s.id === 'wash' && <label className="check"><input type="checkbox" checked={!!items.wash_discount_request?.requested}
+                  onChange={(e) => setItem('wash_discount_request', { requested: e.target.checked, comment: e.target.checked ? 'Запросить скидку за мойку наружных узлов; кабина исключена' : '' })} />
+                  Запросить скидку за мойку (без кабины)</label>}
                 <div className="items">
                   {visible.map((it) => (
                     <ItemRow key={it.id} item={it} ans={items[it.id] || {}} onChange={(p) => setItem(it.id, p)}
@@ -232,7 +238,7 @@ export default function DefectSheet() {
 
           <Card title="Повреждения или требуется ремонт — дополнительные работы">
             <ExtraWorks extra={extra} setExtra={setExtra} works={works.data || []} tractor={tractor} trailer={trailer} />
-            <Field label="Примечание к дефектовке">
+            <Field label="Жалобы водителя и примечания к дефектовке">
               <textarea className="input" rows={2} value={head.notes} onChange={(e) => setHead((h) => ({ ...h, notes: e.target.value }))} />
             </Field>
           </Card>
@@ -304,24 +310,27 @@ function Seg({ value, onChange, options }) {
   );
 }
 
-function AxleMap({ veh, axles, value, onChange, label, measureField, measure = {}, onMeasure, min }) {
+function AxleMap({ veh, axles, value, states = {}, onChange, label, measureField, measure = {}, onMeasure, min }) {
   const toggle = (code) => onChange(value.includes(code) ? value.filter((x) => x !== code) : [...value, code]);
+  const setState = (code, state) => onChange({ positions: state === 'defect' ? [...new Set([...value, code])] : value.filter((x) => x !== code), position_states: { ...states, [code]: state } });
   const mm = (code) => measure[code]?.[measureField];
   return (
     <div className="axlemap">
       <div className="axlemap-title">{label}</div>
+      <div className="muted small">Левая и правая стороны указаны по ходу движения</div>
       <div className="axlemap-body">
         {Array.from({ length: axles }, (_, i) => i + 1).map((a) => (
           <div className="axle" key={a}>
-            {['L', 'R'].map((side, idx) => {
+            {['R', 'L'].map((side, idx) => {
               const code = `${veh}:${a}:${side}`;
               const on = value.includes(code);
               const v = measureField ? mm(code) : null;
-              const btn = (
-                <button key={side} type="button" className={cx('wheel', on && 'on', measureField && v !== '' && v != null && 'has-mm')} onClick={() => toggle(code)} title={`Ось ${a}, ${side === 'L' ? 'левая' : 'правая'} сторона`}>
+              const btn = (<div className="wheel-position" key={side}>
+                <button type="button" className={cx('wheel', on && 'on', measureField && v !== '' && v != null && 'has-mm')} onClick={() => toggle(code)} title={`Ось ${a}, ${side === 'L' ? 'левая' : 'правая'} сторона`}>
                   {side === 'L' ? 'Л' : 'П'}{measureField && v !== '' && v != null ? <small>{String(v).replace('.', ',')}</small> : null}
                 </button>
-              );
+                <div className="position-state"><button type="button" className={states[code] === 'ok' ? 'selected-ok' : ''} onClick={() => setState(code, 'ok')}>Норма</button><button type="button" className={on ? 'selected-defect' : ''} onClick={() => setState(code, 'defect')}>Дефект</button></div>
+              </div>);
               return idx === 0 ? [btn, <span key="bar" className="axle-bar">ось {a}</span>] : btn;
             })}
           </div>
@@ -352,7 +361,7 @@ function AxleMap({ veh, axles, value, onChange, label, measureField, measure = {
 
 const numOrNull = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 function circuitsBad(item, ans) {
-  const vals = (ans.values || []).map(numOrNull).filter((v) => v != null);
+  const vals = (item.circuits || []).map((_, i) => numOrNull(ans.values?.[i])).filter((v) => v != null);
   if (!vals.length) return false;
   return vals.some((v) => v < item.min || v > item.max) || (item.maxDelta != null && vals.length > 1 && Math.max(...vals) - Math.min(...vals) > item.maxDelta);
 }
@@ -467,9 +476,9 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
     defect = value.length > 0;
     control = (
       <div className="axlemaps">
-        {tractor && <AxleMap veh="tractor" label={`Тягач ${plate(tractor.plate)}`} axles={tractor.axles || 2} value={value} onChange={(p) => onChange({ positions: p })}
+        {tractor && <AxleMap veh="tractor" label={`Тягач ${plate(tractor.plate)}`} axles={tractor.axles || 2} value={value} states={ans.position_states || {}} onChange={(p) => onChange(p)}
           measureField={item.measureField === 'disc' && tractor.brake_type === 'drum' ? null : item.measureField} measure={measure} onMeasure={onMeasure} min={item.measureField === 'disc' ? discMin : padMin} />}
-        {trailer && <AxleMap veh="trailer" label={`Прицеп ${plate(trailer.plate)}`} axles={trailer.axles || 3} value={value} onChange={(p) => onChange({ positions: p })}
+        {trailer && <AxleMap veh="trailer" label={`Прицеп ${plate(trailer.plate)}`} axles={trailer.axles || 3} value={value} states={ans.position_states || {}} onChange={(p) => onChange(p)}
           measureField={item.measureField === 'disc' && trailer.brake_type === 'drum' ? null : item.measureField} measure={measure} onMeasure={onMeasure} min={item.measureField === 'disc' ? discMin : padMin} />}
       </div>
     );

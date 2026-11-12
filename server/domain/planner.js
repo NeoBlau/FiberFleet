@@ -35,7 +35,7 @@ function isDefect(item, ans, maintByKey) {
       return Array.isArray(ans.positions) && ans.positions.length > 0;
     case 'circuits': {
       if (ans.state === 'defect') return true;
-      const vals = circuitValues(ans);
+      const vals = circuitValues(item, ans);
       if (!vals.length) return false;
       return vals.some((v) => v < item.min || v > item.max)
         || (item.maxDelta != null && vals.length > 1 && Math.max(...vals) - Math.min(...vals) > item.maxDelta);
@@ -46,7 +46,7 @@ function isDefect(item, ans, maintByKey) {
 }
 
 const toNum = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
-const circuitValues = (ans) => (ans.values || []).map(toNum).filter((v) => v != null);
+const circuitValues = (item, ans) => (item.circuits || []).map((_, i) => toNum(ans.values?.[i])).filter((v) => v != null);
 const fmtNum = (v) => String(v).replace('.', ',');
 const pctLabel = (code) => {
   const { axle, side } = parsePosition(code);
@@ -143,7 +143,7 @@ export function generatePlan(db, ctx) {
       const v = toNum(ans.value);
       readings.push({ item: item.id, label: item.label, text: `${fmtNum(v)} ${item.unit}`, bad: v < item.min || v > item.max });
     }
-    if (item.kind === 'circuits' && circuitValues(ans).length) {
+    if (item.kind === 'circuits' && circuitValues(item, ans).length) {
       readings.push({
         item: item.id, label: item.label, bad: isDefect(item, ans),
         text: item.circuits.map((c, i) => `${c}: ${toNum(ans.values?.[i]) != null ? fmtNum(toNum(ans.values[i])) : '—'}`).join(' · ') + ` ${item.unit}`,

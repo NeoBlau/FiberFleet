@@ -117,6 +117,10 @@ export default function OrderPage() {
         </Card>
       )}
 
+      {o.defects?.items?.wash_discount_request?.requested && (
+        <Card title="Запрос по мойке"><div className="text-amber">Запросить скидку за мойку наружных узлов. Кабина исключена.</div></Card>
+      )}
+
       {(o.inspection?.readings || []).length > 0 && (
         <Card title="Показания и замеры при дефектовке">
           <div className="readings">

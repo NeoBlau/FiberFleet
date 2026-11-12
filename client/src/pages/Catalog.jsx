@@ -110,7 +110,7 @@ function WorkDialog({ w, cats, emps, onClose, onSaved }) {
         <label className="check"><input type="checkbox" checked={f.access_all} onChange={set('access_all')} /> Допуск: все сотрудники</label>
         <label className="check"><input type="checkbox" checked={f.external} onChange={set('external')} /> Выполняет сторонний сервис</label>
         <label className="check"><input type="checkbox" checked={f.active} onChange={set('active')} /> Активна</label>
-        {w.id && <label className="check"><input type="checkbox" checked={f.apply_to_open} onChange={set('apply_to_open')} /> Применить норму и цену к незапущенным работам</label>}
+        {w.id && <p className="small muted span-2">Изменённые норма, цена и зарплата автоматически обновятся во всех ещё не начатых работах.</p>}
       </div>
       {!f.access_all && (
         <>

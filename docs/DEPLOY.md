@@ -174,12 +174,12 @@ docker compose up -d --build
 | Статус | `systemctl status fiberfleet` |
 | Журнал (последние 100 строк / в реальном времени) | `journalctl -u fiberfleet -n 100` / `journalctl -u fiberfleet -f` |
 | Перезапуск | `systemctl restart fiberfleet` |
-| Обновление до новой версии | `sudo bash /opt/fiberfleet/deploy/update.sh` (сначала делает резервную копию) |
+| Обновление до новой версии | `sudo bash /opt/fiberfleet/deploy/update.sh` (проверяет резервную копию БД и сохраняет код в `orig/ГГГГ-ММ-ДД_ЧЧММСС`) |
 | Резервная копия вручную | `sudo bash /opt/fiberfleet/deploy/backup.sh` |
 | Список копий | `ls -lh /var/backups/fiberfleet` |
 | Скачать копию на свой компьютер | `scp root@IP:/var/backups/fiberfleet/fiberfleet_ДАТА.db.gz .` или «Настройки → Резервная копия» в программе |
 
-> `update.sh` работает, если программа ставилась через `git clone`. Если загружали ZIP — загрузите новый архив, распакуйте поверх `/opt/fiberfleet` (папку `/var/lib/fiberfleet` не трогайте) и выполните шаги 4 и `systemctl restart fiberfleet`.
+> `update.sh` работает, если программа ставилась через `git clone` и новая версия уже опубликована в настроенной Git-ветке. Перед обновлением сохраняются проверенная копия БД в `/var/backups/fiberfleet` и исходные файлы приложения в `/opt/fiberfleet/orig/ГГГГ-ММ-ДД_ЧЧММСС`. База `/var/lib/fiberfleet` и настройки `/etc/fiberfleet.env` остаются на месте. Если загружали ZIP, сначала сделайте резервную копию, распакуйте новую версию поверх `/opt/fiberfleet`, не копируя папки `data`, `.git`, `node_modules` и не трогая `/var/lib/fiberfleet`; затем выполните команды установки зависимостей и сборки из шага 4 и перезапустите `fiberfleet`.
 
 ### Загрузка пробега и актуального списка ТС
 Сразу после установки (и каждый раз, когда обновляете `server/seed/fleet.json`) загрузите пробег, сцепки и заметки:

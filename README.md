@@ -50,6 +50,8 @@ npm start          # http://localhost:8080
 
 Сразу смените пароли (клик по имени внизу меню). Демо-пользователей можно не создавать: `FF_DEMO_USERS=0` при первом запуске.
 
+Для восстановления исходных паролей в локальной базе этой копии остановите сервер и выполните `npm run reset-local-passwords`. Команда меняет пароли только в базе, выбранной через `FF_DATA_DIR`/`FF_DB` (по умолчанию `./data/fiberfleet.db`), и восстанавливает `admin`, `operator`, `master`, `slastunov`.
+
 ### Установка на Linux-сервер
 
 Полная инструкция: [docs/DEPLOY.md](docs/DEPLOY.md). Коротко: `sudo bash deploy/install.sh fleet.ваш-домен.ru you@почта.ru`.

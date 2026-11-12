@@ -28,7 +28,7 @@ export function createSession(db, userId) {
 // Права по ролям
 export const PERMISSIONS = {
   admin: ['*'],
-  operator: ['vehicles.write', 'orders.write', 'plan.write', 'tasks.status', 'parts.write', 'reports.read', 'catalog.read', 'employees.read', 'maintenance.write'],
+  operator: ['vehicles.write', 'orders.write', 'plan.write', 'tasks.reassign', 'tasks.status', 'parts.write', 'reports.read', 'catalog.read', 'employees.read', 'maintenance.write'],
   master: ['vehicles.write', 'orders.write', 'reports.read', 'catalog.read', 'employees.read'],
   mechanic: ['catalog.read'],
 };

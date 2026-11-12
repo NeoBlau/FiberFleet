@@ -20,12 +20,28 @@ before(async () => {
   const app = createApp({ dbFile: ':memory:' });
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}/api`;
-  const r = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'admin', password: 'admin' }) });
+  const r = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'admin', password: 'MaP4GB2zf6UT' }) });
   token = (await r.json()).token;
 });
 after(() => server.close());
 
 const tractorByPlate = async (p) => (await api('GET', '/vehicles/tractor')).data.find((t) => t.plate === p);
+
+test('несколько источников утечки воздуха объединяются в одну работу', async () => {
+  const t = await tractorByPlate('Т970ОН58');
+  const r = await api('POST', '/orders/preview', { tractor_id: t.id, trailer_id: t.trailer_id,
+    defects: { items: { br_leak_tractor: { state: 'defect' }, br_leak_pedal: { state: 'defect' } } } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.tasks.filter((x) => x.description === 'Поиск и устранение утечки воздуха' && x.vehicle_type === 'tractor').length, 1);
+});
+
+test('дефект амортизатора не добавляет лишний осмотр оси', async () => {
+  const t = await tractorByPlate('Т970ОН58');
+  const r = await api('POST', '/orders/preview', { tractor_id: t.id, trailer_id: t.trailer_id,
+    defects: { items: { sus_shocks: { positions: ['trailer:2:L'] } } } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.tasks.filter((x) => x.description === 'Осмотр оси (суппорта, колодки,диски,амортизатора)').length, 0);
+});
 
 test('замеры: колодка и диск ниже нормы → замена на этой позиции; показания сохраняются', async () => {
   const t = await tractorByPlate('Т970ОН58');
@@ -46,16 +62,37 @@ test('замеры: колодка и диск ниже нормы → заме�
   assert.ok(!rd.find((x) => x.label.includes('прав.')).bad);
 });
 
-test('давление в 3 контурах: вне нормы → поиск утечки воздуха; в норме → без работ', async () => {
+test('давление измеряется только в 3-м контуре; старые значения контуров 1 и 2 игнорируются', async () => {
   const t = await tractorByPlate('К531НК95');
-  const low = await api('POST', '/orders/preview', { tractor_id: t.id, defects: { items: { br_pressure: { values: ['9.5', '9.4', '6.2'] } } } });
+  const low = await api('POST', '/orders/preview', { tractor_id: t.id, defects: { items: { br_pressure: { values: ['6.2'] } } } });
   assert.ok(low.data.tasks.some((x) => x.description === 'Поиск и устранение утечки воздуха'));
   assert.ok(low.data.readings.find((x) => x.item === 'br_pressure').bad);
-  const okp = await api('POST', '/orders/preview', { tractor_id: t.id, defects: { items: { br_pressure: { values: ['9.5', '9.4', '9.1'] } } } });
+  const okp = await api('POST', '/orders/preview', { tractor_id: t.id, defects: { items: { br_pressure: { values: ['9.1', '2.0', '12.5'] } } } });
   assert.equal(okp.data.tasks.length, 0);
   assert.equal(okp.data.readings.find((x) => x.item === 'br_pressure').bad, false);
-  const delta = await api('POST', '/orders/preview', { tractor_id: t.id, defects: { items: { br_pressure: { values: ['10.5', '9.0', '9.2'] } } } });
-  assert.ok(delta.data.tasks.length > 0, 'разница между контурами больше 1 бар');
+});
+
+test('осмотр осей по пробегу 150 тысяч создаёт работу осмотра', async () => {
+  const t = await tractorByPlate('Т970ОН58');
+  const r = await api('POST', '/orders/preview', { tractor_id: t.id, tractor_mileage: 150000,
+    defects: { items: {} } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.ok(r.data.tasks.some((x) => x.description === 'Осмотр оси (суппорта, колодки,диски,амортизатора)'));
+});
+
+test('изменение стоимости нормо-часа пересчитывает зарплату всех работ каталога', async () => {
+  const before = (await api('GET', '/work-types')).data;
+  const settings = (await api('GET', '/settings')).data;
+  const changedRate = Number(settings.salary_rate) + 0.01;
+  const saved = await api('PUT', '/settings', { norm_hour_price: Number(settings.norm_hour_price) + 10, salary_rate: changedRate });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  const after = (await api('GET', '/work-types')).data;
+  assert.equal(after.length, before.length);
+  for (const work of after) {
+    const expected = Math.round((Number(work.hours) || 0) * (Number(settings.norm_hour_price) + 10) * changedRate);
+    assert.equal(Number(work.salary), expected, work.name);
+  }
+  await api('PUT', '/settings', { norm_hour_price: Number(settings.norm_hour_price), salary_rate: Number(settings.salary_rate) });
 });
 
 test('ТО не требуется, но работы выбраны из справочника → попадают в план', async () => {

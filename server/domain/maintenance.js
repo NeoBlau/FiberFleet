@@ -46,6 +46,9 @@ export function ruleStatus(db, type, vehicle, rule, now = new Date()) {
 
   const mileage = vehicle.mileage || 0;
   let estimated = false;
+  if (lastKm == null && rule.key === 'axle_inspection') {
+    lastKm = 0; estimated = true; source = 'estimate';
+  }
   if (lastKm == null && rule.interval_km && mileage > 0) {
     lastKm = Math.floor(mileage / rule.interval_km) * rule.interval_km;
     estimated = true;

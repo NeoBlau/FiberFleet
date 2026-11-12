@@ -9,6 +9,7 @@
     "dev": "concurrently -k -n api,web \"node --watch server/index.js\" \"npm --prefix client run dev\"",
     "build": "npm --prefix client install && npm --prefix client run build",
     "start": "node server/index.js",
+    "reset-local-passwords": "node tools/reset-local-default-passwords.js",
     "test": "node --test server/test/*.test.js"
   },
   "dependencies": {

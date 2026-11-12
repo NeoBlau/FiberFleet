@@ -22,7 +22,7 @@ before(async () => {
   db = app.locals.db;
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}/api`;
-  const r = await api('POST', '/auth/login', { login: 'admin', password: 'admin' }, { tok: null });
+  const r = await api('POST', '/auth/login', { login: 'admin', password: 'MaP4GB2zf6UT' }, { tok: null });
   token = r.data.token;
 });
 after(() => server.close());
@@ -158,8 +158,22 @@ test('выполнение работ, запчасти, переназначе�
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(r.data.tasks.find((x) => x.id === other.id).employee_id, emp.id);
 
+  const op = await api('POST', '/auth/login', { login: 'operator', password: 'k96wvgSEkmkP' }, { tok: null });
+  assert.equal(op.status, 200);
+  const nextEmployee = db.prepare("SELECT id FROM employees WHERE name = 'Козырев' AND active = 1").get();
+  r = await api('PUT', `/tasks/${other.id}`, { employee_id: nextEmployee.id }, { tok: op.data.token });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.tasks.find((x) => x.id === other.id).employee_id, nextEmployee.id);
+
+  // Deactivation must release their planned assignments and reschedule onto active staff.
+  const inactive = await api('PUT', `/employees/${emp.id}`, { active: false });
+  assert.equal(inactive.status, 200, JSON.stringify(inactive.data));
+  o = (await api('GET', `/orders/${orderId}`)).data;
+  const stale = o.tasks.filter((x) => x.status === 'planned' && x.employee_id === emp.id);
+  assert.equal(stale.length, 0, 'planned work must not remain assigned to inactive employee');
+
   // слесарь не может переназначать
-  const m = await api('POST', '/auth/login', { login: 'slastunov', password: 'slastunov' }, { tok: null });
+  const m = await api('POST', '/auth/login', { login: 'slastunov', password: '9dD2Drkb63tJ' }, { tok: null });
   const denied = await api('PUT', `/tasks/${other.id}`, { employee_id: null }, { tok: m.data.token });
   assert.equal(denied.status, 403);
 });

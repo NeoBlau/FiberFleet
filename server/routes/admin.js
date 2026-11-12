@@ -17,11 +17,20 @@ export default function adminRoutes(db) {
 
   r.put('/settings', requirePerm('settings.write'), (req, res) => {
     const b = req.body || {};
+    const old = getSettings(db);
     const re = /^\d{2}:\d{2}$/;
     for (const k of ['work_start', 'work_end', 'lunch_start', 'lunch_end']) if (b[k] && !re.test(b[k])) throw bad(`Время в формате ЧЧ:ММ (${k})`);
     if (b.work_start && b.work_end && b.work_start >= b.work_end) throw bad('Начало рабочего дня должно быть раньше конца');
     if (b.work_days && (!Array.isArray(b.work_days) || !b.work_days.length)) throw bad('Выберите рабочие дни');
     const s = saveSettings(db, b);
+    if ((b.norm_hour_price !== undefined && Number(b.norm_hour_price) !== Number(old.norm_hour_price))
+      || (b.salary_rate !== undefined && Number(b.salary_rate) !== Number(old.salary_rate))) {
+      db.prepare(`UPDATE work_types SET salary = ROUND(COALESCE(hours, 0) * ? * ?),
+        salary_max = CASE WHEN hours_max IS NULL THEN salary_max ELSE ROUND(hours_max * ? * ?) END`).run(
+        Number(s.norm_hour_price), Number(s.salary_rate), Number(s.norm_hour_price), Number(s.salary_rate));
+      db.prepare(`UPDATE tasks SET salary = (SELECT w.salary FROM work_types w WHERE w.id = tasks.work_type_id)
+        WHERE status = 'planned' AND work_type_id IS NOT NULL`).run();
+    }
     audit(db, req.user, 'settings', null, 'update', JSON.stringify(b));
     replan(db);
     res.json(s);

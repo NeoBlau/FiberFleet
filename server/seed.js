@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashPassword } from './auth.js';
+import { INITIAL_CREDENTIAL_HASHES } from './initial-credential-hashes.js';
 import { normalizePlate, splitBrand } from './util.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +53,9 @@ export const EXTRA_WORKS = [
   ['Ремонт стойки', 'trailer', 1],
   ['Кузовной ремонт (по согласованию)', 'any', 1],
   ['Обслуживание реф. установки (по согласованию)', 'trailer', 1],
+  ['Проверка холодильной установки: хладоагент и утечки', 'trailer', 0.5],
+  ['Проверка роликов и привода холодильной установки', 'trailer', 0.5],
+  ['Диагностика двигателя холодильной установки', 'trailer', 0.5],
 ];
 
 export const EMPLOYEES = [
@@ -74,6 +78,7 @@ const MAINTENANCE = [
   { key: 'to', name: 'Полное ТО', vehicle_type: 'tractor', brand_match: 'DAF', interval_km: 50000, interval_days: 365, wt: 'ДВС::Полное ТО Daf' },
   { key: 'to', name: 'Полное ТО', vehicle_type: 'tractor', brand_match: 'FAW', interval_km: 40000, interval_days: 365, wt: 'ДВС::Полное ТО Faw' },
   { key: 'valves', name: 'Регулировка клапанов', vehicle_type: 'tractor', brand_match: null, interval_km: 120000, interval_days: null, wt: 'ДВС::Регулировка клапанов' },
+  { key: 'axle_inspection', name: 'Осмотр осей', vehicle_type: 'tractor', brand_match: null, interval_km: 150000, interval_days: null, wt: 'Тормозная система::Осмотр оси (суппорта, колодки,диски,амортизатора)' },
   { key: 'trailer_service', name: 'Обслуживание ходовой прицепа', vehicle_type: 'trailer', brand_match: null, interval_km: 50000, interval_days: 180, wt: 'Ходовая часть прицепа::Выставление соосности балки' },
   { key: 'trailer_brakes', name: 'Диагностика тормозов прицепа', vehicle_type: 'trailer', brand_match: null, interval_km: 50000, interval_days: 180, wt: 'Прицеп::Диагностика тормозов прицепа' },
 ];
@@ -186,12 +191,12 @@ export function seedIfEmpty(db) {
 
     // Пользователи
     const insUser = db.prepare('INSERT INTO users(login, name, pass_hash, role, employee_id) VALUES (?, ?, ?, ?, ?)');
-    const adminPass = process.env.FF_ADMIN_PASSWORD || 'admin';
-    insUser.run('admin', 'Администратор', hashPassword(adminPass), 'admin', null);
+    const adminHash = process.env.FF_ADMIN_PASSWORD ? hashPassword(process.env.FF_ADMIN_PASSWORD) : INITIAL_CREDENTIAL_HASHES.admin;
+    insUser.run('admin', 'Администратор', adminHash, 'admin', null);
     if (process.env.FF_DEMO_USERS !== '0') {
-      insUser.run('operator', 'Оператор', hashPassword('operator'), 'operator', null);
-      insUser.run('master', 'Мастер-приёмщик', hashPassword('master'), 'master', null);
-      insUser.run('slastunov', 'Сластунов', hashPassword('slastunov'), 'mechanic', empIds['Сластунов']);
+      insUser.run('operator', 'Оператор', INITIAL_CREDENTIAL_HASHES.operator, 'operator', null);
+      insUser.run('master', 'Мастер-приёмщик', INITIAL_CREDENTIAL_HASHES.master, 'master', null);
+      insUser.run('slastunov', 'Сластунов', INITIAL_CREDENTIAL_HASHES.slastunov, 'mechanic', empIds['Сластунов']);
     }
   });
   tx();
