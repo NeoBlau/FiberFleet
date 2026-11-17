@@ -193,3 +193,42 @@ test('остаток колодок тягача в %: перед/зад, лев
   assert.match(rd.find((x) => x.label.endsWith('зад прав.')).text, /25 % \(скоро замена\)/);
   assert.ok(!rd.find((x) => x.label.endsWith('перед лев.')).bad);
 });
+
+test('мойка салона — самостоятельная работа; наружная мойка и отметка отсутствия повреждений сохраняются', async () => {
+  const t = await tractorByPlate('Т970ОН58');
+  const preview = async (items) => api('POST', '/orders/preview', { tractor_id: t.id, defects: { items } });
+  const cabin = await preview({ wash_cabin: { state: 'defect' } });
+  assert.equal(cabin.status, 200);
+  assert.equal(cabin.data.tasks.filter(x => x.description === 'Мойка салона автомобиля').length, 1);
+  assert.ok(!cabin.data.tasks.some(x => x.description === 'Мойка тягач'));
+  const both = await preview({ wash_cabin: { state: 'defect' }, wash_tanks: { state: 'defect' }, dmg_body: { state: 'ok', zones: [] }, dmg_plastic: { state: 'ok', zones: [] } });
+  assert.equal(both.data.tasks.filter(x => x.description === 'Мойка салона автомобиля').length, 1);
+  assert.equal(both.data.tasks.filter(x => x.description === 'Мойка тягач').length, 1);
+  assert.deepEqual(both.data.damages, []);
+  const noCabin = await preview({ wash_cabin: { state: 'ok' } });
+  assert.ok(!noCabin.data.tasks.some(x => x.description === 'Мойка салона автомобиля'));
+});
+
+test('добавление мойки салона в существующую базу идемпотентно и сохраняет тарифы и записи', async () => {
+  const { seedIfEmpty, ensureCabinWash } = await import('../seed.js');
+  const db = openDb(':memory:');
+  try {
+    seedIfEmpty(db);
+    const before = db.prepare('SELECT * FROM work_types ORDER BY id').all();
+    const fleet = db.prepare('SELECT * FROM tractors ORDER BY id').all();
+    ensureCabinWash(db);
+    assert.deepEqual(db.prepare("SELECT * FROM work_types WHERE code != 'FF_CABIN_WASH' ORDER BY id").all(), before);
+    db.prepare("UPDATE work_types SET hours = 2, price = 777 WHERE code = 'FF_CABIN_WASH'").run();
+    ensureCabinWash(db);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM work_types').get().n, before.length + 1);
+    assert.deepEqual(db.prepare("SELECT hours, price FROM work_types WHERE code = 'FF_CABIN_WASH'").get(), { hours: 2, price: 777 });
+    assert.deepEqual(db.prepare('SELECT * FROM tractors ORDER BY id').all(), fleet);
+  } finally { db.close(); }
+});
+
+test('шаблон клиента передаёт отдельные подписи кнопок мойки салона', async () => {
+  const { publicTemplate } = await import('../domain/checklist.js');
+  const item = publicTemplate().sections.find(s => s.id === 'cabin_wash').items[0];
+  assert.equal(item.yesLabel, 'Добавить мойку');
+  assert.equal(item.noLabel, 'Не требуется');
+});

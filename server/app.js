@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
-import { seedIfEmpty } from './seed.js';
+import { seedIfEmpty, ensureCabinWash } from './seed.js';
 import { authMiddleware } from './auth.js';
 import { HttpError } from './util.js';
 import authRoutes from './routes/auth.js';
@@ -42,6 +42,7 @@ function syncOps(db) {
 export function createApp({ dbFile } = {}) {
   const db = openDb(dbFile);
   seedIfEmpty(db);
+  ensureCabinWash(db);
 
   const app = express();
   app.locals.db = db;

@@ -212,10 +212,11 @@ export default function DefectSheet() {
             const visible = s.items.filter((it) => (it.vehicle === 'any' || (it.vehicle === 'tractor' ? !!tractor : !!trailer))
               && (!it.requiresReefer || !!trailer?.has_reefer));
             if (!visible.length) return null;
+            const noNewDamage = s.id === 'damage' && visible.every((it) => items[it.id]?.state === 'ok' && !(items[it.id]?.zones || []).length);
             const simple = visible.filter((it) => it.kind === 'pm' || it.kind === 'yesno');
             return (
               <Card key={s.id} title={s.title} className="defect-section" actions={(simple.length > 1 || s.id === 'damage') && (
-                <Button size="sm" variant="ghost" icon={Check} onClick={() => s.id === 'damage'
+                <Button size="sm" variant={noNewDamage ? 'success' : 'ghost'} aria-pressed={s.id === 'damage' ? noNewDamage : undefined} icon={Check} onClick={() => s.id === 'damage'
                   ? visible.forEach((it) => setItem(it.id, { zones: [], state: 'ok', comment: '' }))
                   : simple.forEach((it) => { if (!items[it.id]?.state) setItem(it.id, { state: 'ok' }); })}>{s.id === 'damage' ? 'Новых повреждений нет' : 'Остальное в норме'}</Button>
               )}>
@@ -444,7 +445,7 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
     control = <Seg value={ans.state} onChange={(v) => onChange({ state: v })} options={[{ value: 'ok', label: 'Норма', icon: Check, tone: 'green' }, { value: 'defect', label: 'Дефект', icon: X, tone: 'red' }]} />;
   } else if (item.kind === 'yesno') {
     defect = ans.state === 'defect';
-    control = <Seg value={ans.state} onChange={(v) => onChange({ state: v })} options={[{ value: 'ok', label: 'Нет', tone: 'green' }, { value: 'defect', label: 'Есть', tone: 'red' }]} />;
+    control = <Seg value={ans.state} onChange={(v) => onChange({ state: v })} options={[{ value: 'ok', label: item.noLabel || 'Нет', tone: 'green' }, { value: 'defect', label: item.yesLabel || 'Есть', tone: item.yesLabel ? 'green' : 'red' }]} />;
   } else if (item.kind === 'volt') {
     const v = ans.value === '' || ans.value == null ? null : Number(ans.value);
     defect = v != null && (v < item.min || v > item.max);
@@ -536,7 +537,10 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
       <div className="chips">
         {damageZones.map((z) => (
           <button key={z} type="button" className={cx('chip', zones.includes(z) && 'on')}
-            onClick={() => onChange({ zones: zones.includes(z) ? zones.filter((x) => x !== z) : [...zones, z] })}>{z}</button>
+            onClick={() => {
+              const nextZones = zones.includes(z) ? zones.filter((x) => x !== z) : [...zones, z];
+              onChange({ zones: nextZones, state: nextZones.length ? 'defect' : null });
+            }}>{z}</button>
         ))}
       </div>
     );
@@ -545,7 +549,7 @@ function ItemRow({ item, ans, onChange, tractor, trailer, hint, damageZones, mai
   const wide = ['positions', 'damage', 'measure', 'circuits', 'percent'].includes(item.kind);
   const pickedWorks = (ans.works || []).map((id) => catalog.find((w) => w.id === id)).filter(Boolean);
   return (
-    <div className={cx('item', defect && 'item-defect', hint && !defect && 'item-hint', wide && 'item-wide')}>
+    <div className={cx('item', defect && (item.yesLabel ? 'item-service' : 'item-defect'), hint && !defect && 'item-hint', wide && 'item-wide')}>
       <div className="item-head">
         <div className="item-label">
           {item.label}

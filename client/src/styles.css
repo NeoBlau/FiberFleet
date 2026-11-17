@@ -475,3 +475,5 @@ select.input { padding-right: 28px; }
 .wheel-mm-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
 .manual-work { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
 .manual-work .input:first-child { flex: 1; min-width: 200px; max-width: 360px; }
+
+.item-service { background: linear-gradient(90deg, #dcfce7, transparent 70%); margin: 0 -16px; padding-left: 16px; padding-right: 16px; border-left: 3px solid #16a34a; }

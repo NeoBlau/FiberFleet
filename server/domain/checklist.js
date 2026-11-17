@@ -49,6 +49,13 @@ export const SECTIONS = [
     })),
   },
   {
+    id: 'cabin_wash', title: 'Мойка салона автомобиля', vehicle: 'tractor',
+    note: 'Отдельная услуга, не входит в оценку качества наружной мойки и скидку. Норма и стоимость берутся из справочника работ; перед первым использованием согласуйте их.',
+    items: [{ id: 'wash_cabin', label: 'Мойка салона автомобиля', kind: 'yesno', priority: 3, seq: 0,
+      noLabel: 'Не требуется', yesLabel: 'Добавить мойку',
+      works: [{ wt: 'Мойка::Мойка салона автомобиля' }], zone: 'Салон автомобиля' }],
+  },
+  {
     id: 'damage', title: 'Контроль новых повреждений ТС',
     note: 'Фиксация повреждений при приёмке. Работы не создаются автоматически — при необходимости добавьте «Кузовной ремонт (по согласованию)».',
     items: [
@@ -479,6 +486,7 @@ export function publicTemplate() {
       id: s.id, title: s.title, note: s.note || null, vehicle: s.vehicle || 'any',
       items: s.items.map((i) => ({
         id: i.id, label: i.label, kind: i.kind, priority: i.priority,
+        noLabel: i.noLabel, yesLabel: i.yesLabel,
         vehicle: i.vehicle || s.vehicle || 'any', unit: i.unit, min: i.min, max: i.max, hint: i.hint,
         maint: i.maint, zone: i.zone, checks: i.checks || [], relatedItems: i.relatedItems || [],
         options: i.options || [], circuits: i.circuits, maxDelta: i.maxDelta, padMin: i.padMin, discMin: i.discMin, warn: i.warn, measureField: i.measureField,

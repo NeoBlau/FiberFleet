@@ -202,3 +202,14 @@ export function seedIfEmpty(db) {
   tx();
   return true;
 }
+
+// Добавляем новую услугу и в действующие базы, не меняя их тарифы и данные.
+export function ensureCabinWash(db) {
+  if (db.prepare("SELECT id FROM work_types WHERE category = 'Мойка' AND name = 'Мойка салона автомобиля'").get()) return;
+  const settings = Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(r => [r.key, JSON.parse(r.value)]));
+  const price = Number(settings.norm_hour_price) || DEFAULT_SETTINGS.norm_hour_price;
+  db.prepare(`INSERT INTO work_types(code, category, name, applies_to, hours, price, salary, note)
+    VALUES (?, 'Мойка', 'Мойка салона автомобиля', 'tractor', 1, ?, ?, ?)`).run(
+      'FF_CABIN_WASH', price, Math.round(price * (Number(settings.salary_rate) || DEFAULT_SETTINGS.salary_rate)),
+      'Предварительная норма — 1 час, цена от нормо-часа. Согласуйте и измените норму и цену перед использованием.');
+}
