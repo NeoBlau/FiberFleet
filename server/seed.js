@@ -210,6 +210,6 @@ export function ensureCabinWash(db) {
   const price = Number(settings.norm_hour_price) || DEFAULT_SETTINGS.norm_hour_price;
   db.prepare(`INSERT INTO work_types(code, category, name, applies_to, hours, price, salary, note)
     VALUES (?, 'Мойка', 'Мойка салона автомобиля', 'tractor', 1, ?, ?, ?)`).run(
-      'FF_CABIN_WASH', price, Math.round(price * (Number(settings.salary_rate) || DEFAULT_SETTINGS.salary_rate)),
+      'FF_CABIN_WASH', price, Math.round(price * Number(settings.salary_rate ?? DEFAULT_SETTINGS.salary_rate)),
       'Предварительная норма — 1 час, цена от нормо-часа. Согласуйте и измените норму и цену перед использованием.');
 }

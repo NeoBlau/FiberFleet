@@ -70,6 +70,7 @@ export default function Catalog() {
 }
 
 function WorkDialog({ w, cats, emps, onClose, onSaved }) {
+  const { settings } = useApp();
   const [f, setF] = useState({
     code: w.code || '', category: w.category || '', name: w.name || '', applies_to: w.applies_to || 'tractor',
     hours: w.hours ?? '', hours_max: w.hours_max ?? '', price: w.price ?? '', price_max: w.price_max ?? '',
@@ -77,7 +78,23 @@ function WorkDialog({ w, cats, emps, onClose, onSaved }) {
     required_qualification: w.required_qualification || '', note: w.note || '', active: w.id ? !!w.active : true, access: w.access || [],
     apply_to_open: false,
   });
-  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const set = (k) => (e) => {
+    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    setF((s) => {
+      const next = { ...s, [k]: value };
+      if (k === 'hours' && next.hours_max !== '' && Number(s.hours_max) === Number(s.hours)) next.hours_max = value;
+      if (['hours', 'hours_max'].includes(k)) {
+        if (next.hours_max !== '' && Number(next.hours_max) < Number(next.hours)) next.hours_max = next.hours;
+        next.price = Math.round(Number(next.hours) * Number(settings.norm_hour_price));
+        next.price_max = next.hours_max === '' ? '' : Math.round(Number(next.hours_max) * Number(settings.norm_hour_price));
+        next.salary = Math.round(next.price * Number(settings.salary_rate));
+        next.salary_max = next.price_max === '' ? '' : Math.round(next.price_max * Number(settings.salary_rate));
+      } else if (k === 'price' || k === 'price_max') {
+        next[k === 'price' ? 'salary' : 'salary_max'] = value === '' ? '' : Math.round(Number(value) * Number(settings.salary_rate));
+      }
+      return next;
+    });
+  };
   const [run, busy] = useAction();
   return (
     <Modal title={w.id ? w.name : 'Новая работа'} onClose={onClose} wide footer={<>
@@ -89,6 +106,7 @@ function WorkDialog({ w, cats, emps, onClose, onSaved }) {
         onSaved(); return r;
       }, 'Сохранено')}>Сохранить</Button>
     </>}>
+      <p className="small muted">При изменении нормы цена и ЗП пересчитываются автоматически. Нормо-час: {money(settings.norm_hour_price)}, доля ЗП: {Math.round(settings.salary_rate * 10000) / 100} %.</p>
       <div className="form-grid">
         <Field label="Категория">
           <input className="input" list="cats" value={f.category} onChange={set('category')} />
@@ -102,7 +120,7 @@ function WorkDialog({ w, cats, emps, onClose, onSaved }) {
         <Field label="Особая квалификация" hint="напр. «токарь»"><input className="input" value={f.required_qualification} onChange={set('required_qualification')} /></Field>
         <Field label="Норма, ч"><input className="input" type="number" step="0.05" value={f.hours} onChange={set('hours')} /></Field>
         <Field label="Норма макс., ч"><input className="input" type="number" step="0.05" value={f.hours_max} onChange={set('hours_max')} /></Field>
-        <Field label="Цена с НДС, ₽" hint="Пусто — по договорённости"><input className="input" type="number" value={f.price} onChange={set('price')} /></Field>
+        <Field label="Цена с НДС, ₽" hint="Норма × цена нормо-часа; можно скорректировать вручную"><input className="input" type="number" value={f.price} onChange={set('price')} /></Field>
         <Field label="Цена макс., ₽"><input className="input" type="number" value={f.price_max} onChange={set('price_max')} /></Field>
         <Field label="ЗП, ₽"><input className="input" type="number" value={f.salary} onChange={set('salary')} /></Field>
         <Field label="ЗП макс., ₽"><input className="input" type="number" value={f.salary_max} onChange={set('salary_max')} /></Field>

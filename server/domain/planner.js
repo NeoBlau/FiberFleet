@@ -125,7 +125,7 @@ export function generatePlan(db, ctx) {
     if (!name) return null;
     const hours = Math.max(0.1, Number(String(c.hours ?? '').replace(',', '.')) || 1);
     const price = Math.round(hours * (Number(settings.norm_hour_price) || 2000));
-    return { id: null, name, category: 'Вручную', hours, price, salary: Math.round(price * (Number(settings.salary_rate) || 0.32)) };
+    return { id: null, name, category: 'Вручную', hours, price, salary: Math.round(price * Number(settings.salary_rate ?? 0.32)) };
   };
 
   const resolveWt = (key, itemLabel) => {

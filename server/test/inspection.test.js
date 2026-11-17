@@ -89,7 +89,7 @@ test('изменение стоимости нормо-часа пересчит
   const after = (await api('GET', '/work-types')).data;
   assert.equal(after.length, before.length);
   for (const work of after) {
-    const expected = Math.round((Number(work.hours) || 0) * (Number(settings.norm_hour_price) + 10) * changedRate);
+    const expected = Math.round(Math.round((Number(work.hours) || 0) * (Number(settings.norm_hour_price) + 10)) * changedRate);
     assert.equal(Number(work.salary), expected, work.name);
   }
   await api('PUT', '/settings', { norm_hour_price: Number(settings.norm_hour_price), salary_rate: Number(settings.salary_rate) });

@@ -3,6 +3,8 @@ import { requirePerm } from '../auth.js';
 import { json, nowIso } from '../db.js';
 import { eligibleEmployees, loadEmployees, speedStats } from '../domain/scheduler.js';
 import { audit, replan } from '../services/orders.js';
+import { getSettings } from '../settings.js';
+import { catalogAmounts, syncPlannedCatalogTasks } from '../domain/catalog-pricing.js';
 import { bad, notFound, num } from '../util.js';
 
 export default function staffRoutes(db) {
@@ -114,7 +116,7 @@ export default function staffRoutes(db) {
     if (b.applies_to !== undefined) out.applies_to = ['tractor', 'trailer', 'any'].includes(b.applies_to) ? b.applies_to : 'any';
     for (const f of ['hours', 'hours_max', 'price', 'price_max', 'salary', 'salary_max']) if (b[f] !== undefined) out[f] = num(b[f]);
     for (const f of ['access_all', 'external', 'active']) if (b[f] !== undefined) out[f] = b[f] ? 1 : 0;
-    if ('hours' in out && !(out.hours > 0)) throw bad('Норма времени должна быть больше 0');
+    if ('hours' in out && (!Number.isFinite(out.hours) || !(out.hours > 0))) throw bad('Норма времени должна быть больше 0');
     return out;
   };
 
@@ -122,6 +124,13 @@ export default function staffRoutes(db) {
     const data = wtFields(req.body || {});
     if (!data.name || !data.category) throw bad('Укажите категорию и название работы');
     if (!data.hours) throw bad('Укажите норму времени');
+    if (data.hours_max != null) data.hours_max = Math.max(data.hours, data.hours_max);
+    const settings = getSettings(db);
+    const amounts = catalogAmounts(data.hours, data.hours_max, settings);
+    data.price ??= amounts.price;
+    data.price_max ??= amounts.price_max;
+    data.salary ??= Math.round(data.price * Number(settings.salary_rate));
+    data.salary_max ??= data.price_max == null ? null : Math.round(data.price_max * Number(settings.salary_rate));
     const last = db.prepare("SELECT code FROM work_types WHERE code LIKE 'W%' ORDER BY CAST(SUBSTR(code, 2) AS INTEGER) DESC LIMIT 1").get();
     data.code = req.body.code?.trim() || `W${String((last ? Number(last.code.slice(1)) : 0) + 1).padStart(3, '0')}`;
     const cols = Object.keys(data);
@@ -137,11 +146,21 @@ export default function staffRoutes(db) {
     const data = wtFields(req.body || {});
     if (req.body.code !== undefined && req.body.code.trim()) data.code = req.body.code.trim();
     const hoursChanged = data.hours !== undefined && Number(data.hours) !== Number(w.hours);
-    const priceChanged = data.price !== undefined && Number(data.price) !== Number(w.price);
-    if ((hoursChanged || priceChanged) && (data.salary === undefined || Number(data.salary) === Number(w.salary))) {
-      const oldBase = priceChanged ? Number(w.price) : Number(w.hours);
-      const newBase = priceChanged ? Number(data.price) : Number(data.hours);
-      if (w.salary != null && oldBase > 0) data.salary = Math.round(Number(w.salary) * newBase / oldBase);
+    const maxChanged = data.hours_max !== undefined && data.hours_max !== w.hours_max;
+    const settings = getSettings(db);
+    if (hoursChanged || maxChanged) {
+      const hours = data.hours ?? w.hours;
+      let max = data.hours_max !== undefined ? data.hours_max : w.hours_max;
+      // Одинаковые границы означают одну норму, а не диапазон.
+      if (hoursChanged && !maxChanged && w.hours_max === w.hours) max = hours;
+      data.hours_max = max == null ? null : Math.max(hours, max);
+      Object.assign(data, catalogAmounts(hours, data.hours_max, settings));
+    } else {
+      for (const [price, salary] of [['price', 'salary'], ['price_max', 'salary_max']]) {
+        if (data[price] !== undefined && data[price] !== w[price] && (data[salary] === undefined || data[salary] === w[salary])) {
+          data[salary] = data[price] == null ? null : Math.round(data[price] * Number(settings.salary_rate));
+        }
+      }
     }
     if (Object.keys(data).length) {
       db.prepare(`UPDATE work_types SET ${Object.keys(data).map((c) => `${c} = @${c}`).join(', ')}, updated_at = @ts WHERE id = @id`)
@@ -151,8 +170,7 @@ export default function staffRoutes(db) {
     // Справочник является источником нормы, цены и зарплаты для всех ещё не начатых работ.
     // Пересчитываем открытые задания автоматически при редактировании этих полей.
     if (['hours', 'price', 'salary'].some((field) => field in data)) {
-      db.prepare(`UPDATE tasks SET hours = @hours, price = @price, salary = @salary WHERE work_type_id = @id AND status = 'planned'`)
-        .run({ id: w.id, hours: data.hours ?? w.hours, price: data.price ?? w.price, salary: data.salary ?? w.salary });
+      syncPlannedCatalogTasks(db, w.id);
     }
     audit(db, req.user, 'work_type', w.id, 'update', JSON.stringify(req.body));
     if (req.body.access || 'access_all' in data || 'external' in data || ['hours', 'price', 'salary'].some((field) => field in data)) replan(db);

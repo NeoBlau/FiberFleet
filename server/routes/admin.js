@@ -5,6 +5,7 @@ import os from 'node:os';
 import { hashPassword, requirePerm } from '../auth.js';
 import { getSettings, saveSettings } from '../settings.js';
 import { audit, replan } from '../services/orders.js';
+import { catalogAmounts, syncPlannedCatalogTasks } from '../domain/catalog-pricing.js';
 import { bad, notFound } from '../util.js';
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -22,15 +23,21 @@ export default function adminRoutes(db) {
     for (const k of ['work_start', 'work_end', 'lunch_start', 'lunch_end']) if (b[k] && !re.test(b[k])) throw bad(`Время в формате ЧЧ:ММ (${k})`);
     if (b.work_start && b.work_end && b.work_start >= b.work_end) throw bad('Начало рабочего дня должно быть раньше конца');
     if (b.work_days && (!Array.isArray(b.work_days) || !b.work_days.length)) throw bad('Выберите рабочие дни');
-    const s = saveSettings(db, b);
-    if ((b.norm_hour_price !== undefined && Number(b.norm_hour_price) !== Number(old.norm_hour_price))
-      || (b.salary_rate !== undefined && Number(b.salary_rate) !== Number(old.salary_rate))) {
-      db.prepare(`UPDATE work_types SET salary = ROUND(COALESCE(hours, 0) * ? * ?),
-        salary_max = CASE WHEN hours_max IS NULL THEN salary_max ELSE ROUND(hours_max * ? * ?) END`).run(
-        Number(s.norm_hour_price), Number(s.salary_rate), Number(s.norm_hour_price), Number(s.salary_rate));
-      db.prepare(`UPDATE tasks SET salary = (SELECT w.salary FROM work_types w WHERE w.id = tasks.work_type_id)
-        WHERE status = 'planned' AND work_type_id IS NOT NULL`).run();
-    }
+    if (b.norm_hour_price !== undefined && (!Number.isFinite(Number(b.norm_hour_price)) || Number(b.norm_hour_price) <= 0)) throw bad('Стоимость нормо-часа должна быть больше 0');
+    if (b.salary_rate !== undefined && (!Number.isFinite(Number(b.salary_rate)) || Number(b.salary_rate) < 0 || Number(b.salary_rate) > 1)) throw bad('Доля зарплаты должна быть от 0 до 1 (0–100 %)');
+    const s = db.transaction(() => {
+      const saved = saveSettings(db, b);
+      if ((b.norm_hour_price !== undefined && Number(b.norm_hour_price) !== Number(old.norm_hour_price))
+        || (b.salary_rate !== undefined && Number(b.salary_rate) !== Number(old.salary_rate))) {
+        const update = db.prepare(`UPDATE work_types SET price = @price, price_max = @price_max,
+          salary = @salary, salary_max = @salary_max, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = @id`);
+        for (const work of db.prepare('SELECT id, hours, hours_max FROM work_types').all()) {
+          update.run({ id: work.id, ...catalogAmounts(work.hours, work.hours_max, saved) });
+        }
+        syncPlannedCatalogTasks(db);
+      }
+      return saved;
+    })();
     audit(db, req.user, 'settings', null, 'update', JSON.stringify(b));
     replan(db);
     res.json(s);

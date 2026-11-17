@@ -63,8 +63,8 @@ function General() {
           </div>
         </div>
         <Field label="Праздники / нерабочие дни" hint="Через запятую: 2026-11-04, 2027-01-01" className="span-2"><input className="input" value={f.holidays} onChange={set('holidays')} /></Field>
-        <Field label="Стоимость нормо-часа, ₽" hint="Для новых работ в справочнике"><input className="input" type="number" value={f.norm_hour_price} onChange={set('norm_hour_price')} /></Field>
-        <Field label="Доля ЗП от цены" hint="0,32 = 32 %"><input className="input" type="number" step="0.01" value={f.salary_rate} onChange={set('salary_rate')} /></Field>
+        <Field label="Стоимость нормо-часа, ₽" hint="Пересчитает цены и ЗП в справочнике и ещё не начатых заданиях"><input className="input" type="number" value={f.norm_hour_price} onChange={set('norm_hour_price')} /></Field>
+        <Field label="Зарплата от стоимости работы, %" hint="Например, 40 = 40 %. Завершённые и начатые задания не меняются."><input className="input" type="number" min="0" max="100" step="0.01" value={Math.round(Number(f.salary_rate) * 10000) / 100} onChange={(e) => setF((s) => ({ ...s, salary_rate: Number(e.target.value) / 100 }))} /></Field>
       </div>
       <Button variant="primary" loading={busy} onClick={save}>Сохранить</Button>
     </Card>
