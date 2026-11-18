@@ -8,6 +8,8 @@ import { calendarFor } from '../settings.js';
 import { audit, createOrder, loadOrder, previewPlan, refreshOrderState, replan } from '../services/orders.js';
 import { bad, HttpError, notFound, num } from '../util.js';
 
+import { setRepairPause, stopTaskClock } from '../services/repair-pause.js';
+
 const ACTIVE = ['planned', 'plan_error', 'approved', 'in_progress'];
 
 // Проверки при выходном контроле (порядок — как в бланке)
@@ -27,6 +29,7 @@ export default function orderRoutes(db) {
     const p = {};
     const st = req.query.status || 'active';
     if (st === 'active') where.push(`o.status IN (${ACTIVE.map((s) => `'${s}'`).join(',')})`);
+    else if (st === 'paused') where.push('o.paused_at IS NOT NULL');
     else if (st !== 'all') { where.push('o.status = @status'); p.status = st; }
     if (req.query.q) {
       where.push(`(o.number LIKE @q OR tr.plate LIKE @q OR tl.plate LIKE @q)`);
@@ -38,7 +41,7 @@ export default function orderRoutes(db) {
       where.push(req.query.vehicle_type === 'tractor' ? 'o.tractor_id = @vid' : 'o.trailer_id = @vid');
       p.vid = Number(req.query.vehicle_id);
     }
-    const rows = db.prepare(`SELECT o.id, o.number, o.status, o.inspected_at, o.release_deadline, o.closed_at, o.plan_errors,
+    const rows = db.prepare(`SELECT o.id, o.number, o.status, o.dispatch_urgent, o.paused_at, o.pause_reason, o.inspected_at, o.release_deadline, o.closed_at, o.plan_errors,
         o.tractor_id, o.trailer_id, tr.plate AS tractor_plate, tr.brand AS tractor_brand, tr.model AS tractor_model,
         tl.plate AS trailer_plate, tl.model AS trailer_model,
         (SELECT COUNT(*) FROM tasks t WHERE t.order_id = o.id AND t.status <> 'cancelled') AS tasks_total,
@@ -51,6 +54,33 @@ export default function orderRoutes(db) {
       ORDER BY o.inspected_at DESC LIMIT 500`).all(p);
     for (const o of rows) o.error_count = JSON.parse(o.plan_errors || '[]').length, delete o.plan_errors;
     res.json(rows);
+  });
+
+  r.post('/orders/urgent', requirePerm('plan.write'), (req, res) => {
+    const { ids, urgent } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length || ids.some(id => !Number.isSafeInteger(id) || id <= 0) || typeof urgent !== 'boolean') throw bad('Выберите ремонты и срочность');
+    db.transaction(() => {
+      for (const id of new Set(ids)) {
+        const order = db.prepare('SELECT status FROM repair_orders WHERE id = ?').get(id);
+        if (!order || !ACTIVE.includes(order.status)) throw bad('Срочность доступна только для открытых ремонтов');
+        db.prepare('UPDATE repair_orders SET dispatch_urgent = ?, updated_at = ? WHERE id = ?').run(urgent ? 1 : 0, nowIso(), id);
+        audit(db, req.user, 'order', id, 'urgent', urgent ? 'Срочный ремонт' : 'Обычная очередь');
+      }
+      replan(db);
+    })();
+    res.json({ ok: true });
+  });
+
+  r.post('/orders/pause', requirePerm('plan.write'), (req, res) => {
+    const { ids, paused, reason } = req.body || {};
+    if (typeof paused !== 'boolean') throw bad('Укажите действие: пауза или возобновление');
+    const changed = db.transaction(() => {
+      const changed = setRepairPause(db, ids, paused, reason);
+      for (const id of changed) audit(db, req.user, 'order', id, paused ? 'pause' : 'resume', String(reason || ''));
+      replan(db);
+      return changed;
+    })();
+    res.json({ ok: true, ids: changed, paused });
   });
 
   r.post('/orders/preview', requirePerm('orders.write'), (req, res) => {
@@ -131,8 +161,9 @@ export default function orderRoutes(db) {
     loadOrder(db, id);
     db.transaction(() => {
       db.prepare(`DELETE FROM schedule WHERE task_id IN (SELECT id FROM tasks WHERE order_id = ? AND status <> 'done')`).run(id);
+      for (const t of db.prepare("SELECT * FROM tasks WHERE order_id = ? AND status = 'in_progress'").all(id)) stopTaskClock(db, t, nowIso());
       db.prepare(`UPDATE tasks SET status = 'cancelled', updated_at = ? WHERE order_id = ? AND status NOT IN ('done')`).run(nowIso(), id);
-      db.prepare(`UPDATE repair_orders SET status = 'cancelled', closed_at = ?, updated_at = ? WHERE id = ?`).run(nowIso(), nowIso(), id);
+      db.prepare(`UPDATE repair_orders SET status = 'cancelled', paused_at = NULL, pause_reason = NULL, closed_at = ?, updated_at = ? WHERE id = ?`).run(nowIso(), nowIso(), id);
     })();
     audit(db, req.user, 'order', id, 'cancel');
     replan(db);
@@ -285,21 +316,25 @@ export default function orderRoutes(db) {
   r.post('/tasks/:id/status', requirePerm('tasks.status'), (req, res) => {
     const t = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
     if (!t) throw notFound('Работа');
+    if (db.prepare('SELECT paused_at FROM repair_orders WHERE id = ?').get(t.order_id)?.paused_at) throw bad('Сначала возобновите ремонт автомобиля');
     const { status, comment } = req.body || {};
     const allowed = { planned: ['in_progress', 'cancelled', 'done'], in_progress: ['paused', 'done', 'cancelled', 'planned'], paused: ['in_progress', 'done', 'cancelled'], done: ['in_progress'], cancelled: ['planned'] };
     if (!allowed[t.status]?.includes(status)) throw bad(`Нельзя перевести работу из «${t.status}» в «${status}»`);
     const ts = req.body.at || nowIso();
+    if (!Number.isFinite(new Date(ts).getTime())) throw bad('Некорректное время изменения статуса');
     const cal = calendarFor(db);
     db.transaction(() => {
+      const elapsed = t.status === 'in_progress' ? stopTaskClock(db, t, ts) : (t.elapsed_minutes || 0);
       const upd = { status, ts: nowIso(), id: t.id, comment: comment ?? t.comment };
       let extra = '';
+      if (status === 'in_progress') { extra += ', active_since = @active_since'; upd.active_since = ts; }
       if (status === 'in_progress' && !t.started_at) { extra += ', started_at = @started_at'; upd.started_at = ts; }
       if (status === 'done') {
         const planned = db.prepare('SELECT start_at FROM schedule WHERE task_id = ?').get(t.id)?.start_at;
         // отмечено раньше планового начала — началом считаем плановое, но не позже окончания
         const started = t.started_at || (planned && planned < ts ? planned : ts);
         let actual = num(req.body.actual_hours);
-        if (actual == null) actual = Math.max(0.1, Math.round(((cal.toWork(ts) - cal.toWork(started)) / 60) * 100) / 100);
+        if (actual == null) actual = Math.max(0.1, Math.round((elapsed > 0 || t.status === 'paused' ? elapsed / 60 : (cal.toWork(ts) - cal.toWork(started)) / 60) * 100) / 100);
         if (!t.employee_id && !req.body.employee_id) throw bad('Укажите исполнителя работы');
         extra += ', finished_at = @finished_at, actual_hours = @actual_hours, started_at = COALESCE(started_at, @started_at)';
         Object.assign(upd, { finished_at: ts, actual_hours: actual, started_at: started });
@@ -311,19 +346,20 @@ export default function orderRoutes(db) {
         if (m != null) recordMileage(db, { type: t.vehicle_type, id: t.vehicle_id, mileage: m, at: ts, source: 'repair', refId: t.order_id, userId: req.user.id });
       }
       if (status === 'in_progress' && t.status === 'done') { extra += ', finished_at = NULL, actual_hours = NULL'; }
+      if (status === 'paused') db.prepare('DELETE FROM schedule WHERE task_id = ?').run(t.id);
       if (status === 'cancelled') db.prepare('DELETE FROM schedule WHERE task_id = ?').run(t.id);
       if (status === 'in_progress') {
         // работа началась: зафиксировать начало в расписании
         const s = db.prepare('SELECT * FROM schedule WHERE task_id = ?').get(t.id);
         if (s) {
           const len = Math.max(5, cal.toWork(s.end_at) - cal.toWork(s.start_at));
-          const st = t.started_at || ts;
+          const st = ts;
           db.prepare('UPDATE schedule SET start_at = ?, end_at = ?, locked = 1 WHERE task_id = ?')
             .run(st, cal.fromWork(cal.toWork(st) + len, true), t.id);
         } else if (t.employee_id) {
-          const st = t.started_at || ts;
+          const st = ts;
           db.prepare(`INSERT INTO schedule(task_id, employee_id, vehicle_type, vehicle_id, start_at, end_at, locked) VALUES (?, ?, ?, ?, ?, ?, 1)`)
-            .run(t.id, t.employee_id, t.vehicle_type, t.vehicle_id, st, cal.fromWork(cal.toWork(st) + Math.ceil((t.hours || 1) * 60), true));
+            .run(t.id, t.employee_id, t.vehicle_type, t.vehicle_id, st, cal.fromWork(cal.toWork(st) + Math.max(5, Math.ceil((t.hours || 1) * 60 - elapsed)), true));
         }
       }
       if (status === 'planned') db.prepare('UPDATE schedule SET locked = 0 WHERE task_id = ?').run(t.id);

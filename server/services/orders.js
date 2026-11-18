@@ -96,6 +96,7 @@ export function replan(db, orderId = null, { now = new Date() } = {}) {
 export function refreshOrderState(db, orderId, { unschedulable = new Map(), now = new Date() } = {}) {
   const order = db.prepare('SELECT * FROM repair_orders WHERE id = ?').get(orderId);
   if (!order) return null;
+  if (order.paused_at) return { status: order.status, errors: [] };
   const tasks = db.prepare('SELECT * FROM tasks WHERE order_id = ?').all(orderId);
   const sched = db.prepare('SELECT s.* FROM schedule s JOIN tasks t ON t.id = s.task_id WHERE t.order_id = ?').all(orderId);
   const scheduleByTask = new Map(sched.map((s) => [s.task_id, s]));
@@ -144,6 +145,7 @@ export function loadOrder(db, id) {
     LEFT JOIN employees e ON e.id = t.employee_id
     LEFT JOIN schedule s ON s.task_id = t.id
     WHERE t.order_id = ? ORDER BY t.seq, t.priority, COALESCE(s.start_at, '9999'), t.id`).all(id);
+  o.work_sessions = db.prepare(`SELECT ws.*, e.name AS employee_name, t.description FROM task_work_sessions ws JOIN tasks t ON t.id = ws.task_id LEFT JOIN employees e ON e.id = ws.employee_id WHERE t.order_id = ? ORDER BY ws.started_at, ws.id`).all(id);
   o.parts = db.prepare('SELECT * FROM installed_parts WHERE order_id = ? ORDER BY installed_at').all(id);
   return o;
 }

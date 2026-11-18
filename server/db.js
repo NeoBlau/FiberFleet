@@ -287,6 +287,17 @@ export function openDb(file) {
 // Обновление схемы уже существующих баз (новые поля добавляются без потери данных)
 function migrate(db) {
   const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+  for (const [table, name, type] of [
+    ['repair_orders', 'dispatch_urgent', 'INTEGER NOT NULL DEFAULT 0'],
+    ['repair_orders', 'paused_at', 'TEXT'], ['repair_orders', 'pause_reason', 'TEXT'],
+    ['tasks', 'active_since', 'TEXT'], ['tasks', 'elapsed_minutes', 'REAL NOT NULL DEFAULT 0'],
+    ['tasks', 'order_pause_state', 'TEXT'],
+  ]) if (!cols(table).includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  db.exec(`CREATE TABLE IF NOT EXISTS task_work_sessions (
+    id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    started_at TEXT NOT NULL, ended_at TEXT NOT NULL, minutes REAL NOT NULL
+  )`);
   if (!cols('repair_orders').includes('exit_control')) {
     db.exec('ALTER TABLE repair_orders ADD COLUMN exit_control TEXT'); // JSON: выходной контроль
   }

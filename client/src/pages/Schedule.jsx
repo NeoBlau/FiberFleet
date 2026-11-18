@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, RefreshCw, MonitorPlay, CalendarDays } from 'lucide-react';
 import * as api from '../api.js';
 import { can, useApp } from '../App.jsx';
-import { addDays, dayStartIso, weekStartIso, fmtDate, fmtTime, plate, PRIORITY, TASK_STATUS, VEH, weekday } from '../format.js';
+import { addDays, dayStartIso, weekStartIso, fmtDateTime, fmtDate, fmtTime, plate, PRIORITY, TASK_STATUS, VEH, weekday } from '../format.js';
 import { Badge, Button, cx, Empty, ErrorBox, Spinner, Tabs, useAction, useLoad } from '../ui/kit.jsx';
 
 const toMin = (hhmm) => { const [h, m] = String(hhmm || '08:00').split(':').map(Number); return h * 60 + (m || 0); };
@@ -13,6 +13,7 @@ export default function Schedule() {
   const nav = useNavigate();
   const [view, setView] = useState(() => (window.innerWidth < 760 ? 'list' : 'day'));
   const [day, setDay] = useState(() => dayStartIso(new Date()));
+  const [summary, setSummary] = useState(null);
   const [emp, setEmp] = useState('');
   const span = view === 'week' ? 7 : view === 'list' ? 7 : 1;
   const from = view === 'week' ? weekStartIso(day) : day;
@@ -32,7 +33,7 @@ export default function Schedule() {
       <div className="page-head">
         <h1>{isMech ? 'Мои задачи' : 'Расписание сотрудников'}</h1>
         <div className="row gap-s wrap">
-          {can(user, 'plan.write') && <Button icon={RefreshCw} loading={busy} onClick={() => run(async () => { const r = await api.post('/schedule/rebuild', {}); reload(); return r; }, 'Расписание пересчитано с учётом текущих задач и приоритетов')}>Пересчитать</Button>}
+          {can(user, 'plan.write') && <Button icon={RefreshCw} loading={busy} onClick={() => run(async () => { const r = await api.post('/schedule/rebuild', {}, { offline: false }); setSummary(r); setDay(dayStartIso(new Date())); setView('day'); setEmp(''); reload(); return r; }, 'Расписание пересчитано с учётом текущих задач и приоритетов')}>Перераспределить слесарей — план на сегодня</Button>}
           <Link to="/monitor"><Button icon={MonitorPlay}>Экран оператора</Button></Link>
         </div>
       </div>
@@ -51,6 +52,12 @@ export default function Schedule() {
           </select>
         )}
       </div>
+      {summary && <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <b>План обновлён: сегодня — {summary.today} работ; не завершатся сегодня — {summary.deferred.length}; без назначения — {summary.unassigned.length}.</b>
+        <p className="small muted">Паузы освобождают слесарей. Критические работы, допуски, ручные закрепления и уже выполняемые задания учитываются.</p>
+        {!!summary.deferred.length && <details><summary>Что переносится и на когда</summary>{summary.deferred.map(t => <p key={t.id}>{t.order_number} · {t.plate} · {t.description} — окончание {fmtDateTime(t.end_at)}</p>)}</details>}
+        {!!summary.unassigned.length && <details><summary>Не удалось назначить</summary>{summary.unassigned.map(t => <p key={t.id}>{t.order_number} · {t.plate} · {t.description} — {t.reason}</p>)}</details>}
+      </div>}
       <ErrorBox error={error} onRetry={reload} />
       {loading && !data ? <Spinner /> : !data ? null : view === 'day' ? (
         <DayGantt data={data} ws={ws} we={we} minuteOfDay={minuteOfDay} onOpen={(e) => nav(`/orders/${e.order_id}`)} />

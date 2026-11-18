@@ -95,12 +95,13 @@ export function rebuildSchedule(db, { orderIds = null, now = new Date() } = {}) 
   const stats = speedStats(db);
   const nowW = ceilTo(cal.toWork(now), ROUND);
 
-  const activeOrders = db.prepare(`SELECT id FROM repair_orders WHERE status IN ('planned','plan_error','approved','in_progress')`).all().map((r) => r.id);
+  const activeOrders = db.prepare(`SELECT id FROM repair_orders WHERE paused_at IS NULL AND status IN ('planned','plan_error','approved','in_progress')`).all().map((r) => r.id);
   const target = new Set(orderIds ? orderIds.filter((id) => activeOrders.includes(id)) : activeOrders);
 
-  const allTasks = db.prepare(`SELECT t.*, s.employee_id AS s_emp, s.start_at AS s_start, s.end_at AS s_end, s.locked AS s_locked
+  const allTasks = db.prepare(`SELECT t.*, ro.dispatch_urgent, s.employee_id AS s_emp, s.start_at AS s_start, s.end_at AS s_end, s.locked AS s_locked
     FROM tasks t LEFT JOIN schedule s ON s.task_id = t.id
-    WHERE t.status IN ('planned','in_progress','paused')`).all();
+    LEFT JOIN repair_orders ro ON ro.id = t.order_id
+    WHERE ro.paused_at IS NULL AND t.status IN ('planned','in_progress','paused')`).all();
 
   const empBusy = new Map(emps.map((e) => [e.id, []]));
   const vehBusy = new Map();
@@ -113,7 +114,9 @@ export function rebuildSchedule(db, { orderIds = null, now = new Date() } = {}) 
 
   const toPlace = [];
   const fixedEnd = new Map(); // taskId → work-minute end (для предшественников)
+  db.prepare("DELETE FROM schedule WHERE task_id IN (SELECT id FROM tasks WHERE status = 'paused')").run();
   for (const t of allTasks) {
+    if (t.status === 'paused') continue;
     const movable = target.has(t.order_id) && t.status === 'planned' && !t.s_locked;
     if (movable) { toPlace.push(t); continue; }
     if (t.s_start && t.s_end && t.s_emp) {
@@ -156,12 +159,16 @@ export function rebuildSchedule(db, { orderIds = null, now = new Date() } = {}) 
       for (const id of remaining) unschedulable.set(id, 'не удалось упорядочить задачи');
       break;
     }
-    ready.sort((a, b) => effPrio.get(a.id) - effPrio.get(b.id)
+    ready.sort((a, b) => (effPrio.get(a.id) === 1 ? 0 : a.dispatch_urgent ? 1 : 2) - (effPrio.get(b.id) === 1 ? 0 : b.dispatch_urgent ? 1 : 2)
+      || effPrio.get(a.id) - effPrio.get(b.id)
       || effDeadline.get(a.id).localeCompare(effDeadline.get(b.id))
       || a.order_id - b.order_id || a.seq - b.seq || a.id - b.id);
     const t = ready[0];
     remaining.delete(t.id);
 
+    if ((groups.get(`${t.order_id}|${vkey(t)}`) || []).some(p => p.seq < t.seq && p.status === 'paused')) {
+      unschedulable.set(t.id, 'предыдущая работа на паузе'); continue;
+    }
     const predEnds = preds.get(t.id).map(endOf).filter((x) => x != null);
     const est = Math.max(nowW, ...predEnds);
     const wt = wts.get(t.work_type_id);
@@ -178,7 +185,7 @@ export function rebuildSchedule(db, { orderIds = null, now = new Date() } = {}) 
     let best = null;
     for (const emp of cands) {
       const factor = factorFor(emp, wt?.category, stats);
-      const dur = Math.max(ROUND, ceilTo((t.hours || 1) * 60 * factor, ROUND));
+      const dur = Math.max(ROUND, ceilTo(Math.max(0, (t.hours || 1) * 60 * factor - (t.elapsed_minutes || 0)), ROUND));
       const s = earliestSlot({
         est, dur, empBusy: empBusy.get(emp.id) || [], vehBusy: vehBusy.get(vkey(t)) || [],
         maxVeh, checkEmp: !emp.is_external,

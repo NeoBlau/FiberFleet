@@ -42,7 +42,7 @@ export default function OrderPage() {
 
   const closed = ['done', 'cancelled'].includes(o.status);
   const canPlan = can(user, 'plan.write') && !closed;
-  const canStatus = can(user, 'tasks.status');
+  const canStatus = can(user, 'tasks.status') && !o.paused_at;
   const canReassign = can(user, 'tasks.reassign');
   const live = o.tasks.filter((t) => t.status !== 'cancelled');
   const totalH = live.reduce((a, t) => a + (t.hours || 0), 0);
@@ -56,10 +56,11 @@ export default function OrderPage() {
 
   return (
     <div className="page">
+      {o.paused_at && <div className="alert alert-amber">Ремонт приостановлен {fmtDateTime(o.paused_at)}. Слесари освобождены. {o.pause_reason} Для продолжения нажмите «Возобновить ремонт».</div>}
       <div className="page-head">
         <div>
           <Link to="/orders" className="back"><ArrowLeft size={16} /> Ремонты</Link>
-          <h1>Ремонт {o.number} <Badge tone={ORDER_STATUS[o.status].tone}>{ORDER_STATUS[o.status].label}</Badge></h1>
+          <h1>Ремонт {o.number} <Badge tone={o.paused_at ? 'gray' : ORDER_STATUS[o.status].tone}>{o.paused_at ? 'На паузе' : ORDER_STATUS[o.status].label}</Badge></h1>
           <div className="muted">
             {o.tractor_id && <Link to={`/vehicles/tractor/${o.tractor_id}`}>Тягач {plate(o.tractor_plate)}</Link>}
             {o.tractor_id && <> {o.tractor_brand} {o.tractor_model}</>}
@@ -68,6 +69,8 @@ export default function OrderPage() {
           </div>
         </div>
         <div className="row gap-s wrap">
+          {canPlan && <Button icon={o.paused_at ? Play : Pause} loading={busy} onClick={() => act(async () => { await api.post('/orders/pause', { ids: [o.id], paused: !o.paused_at }, { offline: false }); return api.get(`/orders/${o.id}`); }, o.paused_at ? 'Ремонт возобновлён' : 'Ремонт на паузе, слесари освобождены')}>{o.paused_at ? 'Возобновить ремонт' : 'Приостановить ремонт'}</Button>}
+          {canPlan && <Button loading={busy} onClick={() => act(async () => { await api.post('/orders/urgent', { ids: [o.id], urgent: !o.dispatch_urgent }, { offline: false }); return api.get(`/orders/${o.id}`); }, 'Срочность обновлена')}>{o.dispatch_urgent ? 'Снять срочность' : 'Срочный ремонт'}</Button>}
           {canPlan && <Button icon={RefreshCw} loading={busy} onClick={() => act(() => api.post(`/orders/${o.id}/replan`, {}), 'Расписание пересчитано')}>Пересчитать</Button>}
           {canPlan && ['planned', 'plan_error'].includes(o.status) && (
             <Button variant="primary" icon={CheckCircle2} loading={busy} disabled={o.plan_errors.length > 0}
@@ -148,6 +151,7 @@ export default function OrderPage() {
                         <td data-l="Работа">
                           <button className="linklike" onClick={() => setTaskEdit(t)}><b>{t.description}</b></button>
                           <div className="small muted">{t.location ? `${t.location} · ` : ''}{SOURCE[t.source]}{t.seq === 0 ? ' · сначала' : t.seq === 1 ? ' · осмотр до ремонта' : t.seq === 3 ? ' · после ремонта' : ''}</div>
+                          {t.elapsed_minutes > 0 && <div className="small text-green">Учтённое время: {hours(t.elapsed_minutes / 60)} ч</div>}
                           {t.reason && <div className="small muted reason">{t.reason}</div>}
                           {t.comment && <div className="small">💬 {t.comment}</div>}
                         </td>
@@ -175,6 +179,10 @@ export default function OrderPage() {
         ))}
       </Card>
 
+      {!!o.work_sessions?.length && <Card title="Учтённое время работы">
+        <p className="small muted">Завершённые рабочие интервалы. Ожидание во время пауз не включается.</p>
+        <div className="table-wrap"><table className="table"><thead><tr><th>Работа</th><th>Слесарь</th><th>Начало</th><th>Окончание</th><th>Отработано, ч</th></tr></thead><tbody>{o.work_sessions.map(s => <tr key={s.id}><td>{s.description}</td><td>{s.employee_name || '—'}</td><td>{fmtDateTime(s.started_at)}</td><td>{fmtDateTime(s.ended_at)}</td><td>{hours(s.minutes / 60)}</td></tr>)}</tbody></table></div>
+      </Card>}
       <Card title="Установленные запчасти" pad={false} actions={can(user, 'parts.write') && !closed && <Button size="sm" icon={Plus} onClick={() => setAddPart({})}>Добавить</Button>}>
         {o.parts.length === 0 ? <Empty icon={Package} title="Запчасти не добавлены" /> : (
           <div className="table-wrap">

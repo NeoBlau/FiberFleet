@@ -36,7 +36,20 @@ export default function scheduleRoutes(db) {
 
   r.post('/schedule/rebuild', requirePerm('plan.write'), (_req, res) => {
     const result = replan(db);
-    res.json({ placed: result.placed.size, unschedulable: result.unschedulable.size });
+    const cal = calendarFor(db);
+    const now = new Date();
+    const end = new Date(new Date(cal.localDayStart(now)).getTime() + DAY).toISOString();
+    const remaining = db.prepare(`SELECT t.id, t.description, t.status, s.start_at, s.end_at, o.number AS order_number,
+      COALESCE(tr.plate, tl.plate) AS plate FROM tasks t JOIN repair_orders o ON o.id = t.order_id
+      LEFT JOIN schedule s ON s.task_id = t.id
+      LEFT JOIN tractors tr ON t.vehicle_type = 'tractor' AND tr.id = t.vehicle_id
+      LEFT JOIN trailers tl ON t.vehicle_type = 'trailer' AND tl.id = t.vehicle_id
+      WHERE t.status IN ('planned','in_progress') AND o.paused_at IS NULL AND o.status IN ('planned','plan_error','approved','in_progress')
+      ORDER BY s.start_at, t.id`).all();
+    res.json({ placed: result.placed.size, unschedulable: result.unschedulable.size,
+      today: remaining.filter(t => t.status === 'in_progress' || (t.start_at && t.start_at < end && t.end_at > now.toISOString())).length,
+      deferred: remaining.filter(t => t.end_at && t.end_at > end),
+      unassigned: remaining.filter(t => !t.start_at).map(t => ({ ...t, reason: result.unschedulable.get(t.id) || 'Не найдено свободное назначение' })) });
   });
 
   // Экран оператора: что каждый делает сейчас и что дальше
