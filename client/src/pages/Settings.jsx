@@ -155,10 +155,36 @@ function Audit() {
 
 function Backup() {
   const toast = useToast();
-  return (
-    <Card title="Резервная копия базы данных">
-      <p>Все данные FiberFleet хранятся в одном файле базы SQLite на сервере. Скачайте копию, чтобы сохранить её отдельно. Для восстановления замените файл <code>data/fiberfleet.db</code> на сервере (при остановленном приложении).</p>
-      <Button variant="primary" icon={Download} onClick={() => api.download('/admin/backup', 'fiberfleet.db').catch((e) => toast(e.message, 'red'))}>Скачать резервную копию</Button>
+  const { user } = useApp();
+  const [busy, setBusy] = useState('');
+  const [file, setFile] = useState(null);
+  const run = async (kind, fn) => {
+    setBusy(kind);
+    try { await fn(); } catch (e) { toast(e.message, 'red'); } finally { setBusy(''); }
+  };
+  if (user?.role !== 'admin') return <Card>Доступно только администратору.</Card>;
+  return <>
+    <Card title="1. Резервная копия данных">
+      <p>Согласованный снимок SQLite: все записи, история, настройки и архивные данные.</p>
+      <Button variant="primary" icon={Download} disabled={!!busy} loading={busy === 'db'} onClick={() => run('db', () => api.download('/admin/backup', 'fiberfleet.db'))}>Скачать базу данных</Button>
     </Card>
-  );
+    <Card title="2. Полная резервная копия FiberFleet">
+      <p>ZIP с исходным кодом, сборкой интерфейса, инструкциями и базой данных. Зависимости устанавливаются заново. Храните архив в защищённом месте.</p>
+      <Button variant="primary" icon={Download} disabled={!!busy} loading={busy === 'zip'} onClick={() => run('zip', () => api.download('/admin/backup/full', 'fiberfleet.zip'))}>Скачать полный архив</Button>
+    </Card>
+    <Card title="3. Восстановление данных">
+      <p>Заменяет данные на сервере содержимым DB или ZIP. Текущая база сохраняется отдельно. Код программы из ZIP автоматически не устанавливается. Перед восстановлением синхронизируйте изменения на всех устройствах.</p>
+      <input type="file" accept=".db,.zip" disabled={!!busy} onChange={e => setFile(e.target.files?.[0] || null)} />
+      <Button disabled={!file || !!busy} loading={busy === 'restore'} onClick={() => {
+        if (busy || !file || !window.confirm('Заменить все текущие данные? После восстановления потребуется повторный вход.')) return;
+        run('restore', async () => {
+          const body = new FormData(); body.append('backup', file); body.append('confirm', 'RESTORE');
+          await api.post('/admin/backup/restore', body, { offline: false });
+          toast('Данные восстановлены. Войдите снова.');
+          window.location.reload();
+        });
+      }}>Восстановить данные</Button>
+    </Card>
+    {busy && <p>Операция выполняется. Не закрывайте страницу.</p>}
+  </>;
 }
