@@ -2,7 +2,7 @@ import express from 'express';
 import { can, requirePerm } from '../auth.js';
 import { nowIso } from '../db.js';
 import { publicTemplate, PRIORITIES } from '../domain/checklist.js';
-import { factorFor, loadEmployees, speedStats } from '../domain/scheduler.js';
+import { eligibleEmployees, factorFor, loadEmployees, speedStats } from '../domain/scheduler.js';
 import { recordMileage } from '../domain/maintenance.js';
 import { calendarFor } from '../settings.js';
 import { audit, createOrder, loadOrder, previewPlan, refreshOrderState, replan } from '../services/orders.js';
@@ -251,6 +251,7 @@ export default function orderRoutes(db) {
       throw bad('Работа уже закрыта');
     }
 
+    if(t.status==='in_progress' && b.employee_id!==undefined && Number(b.employee_id)!==t.employee_id) throw bad('Сначала приостановите работу, затем переназначьте сотрудника');
     const tx = db.transaction(() => {
       const set = {};
       if (b.priority !== undefined) {
@@ -269,6 +270,9 @@ export default function orderRoutes(db) {
         if (b.employee_id) {
           const e = db.prepare('SELECT id FROM employees WHERE id = ? AND active = 1').get(b.employee_id);
           if (!e) throw bad('Сотрудник не найден');
+          const {emps,access}=loadEmployees(db);
+          const wt=t.work_type_id?db.prepare('SELECT * FROM work_types WHERE id=?').get(t.work_type_id):null;
+          if(!eligibleEmployees(wt,emps,access).some(emp=>emp.id===e.id)) throw bad('У сотрудника нет допуска к этой работе');
           set.employee_id = e.id; set.assigned_manual = 1;
         } else {
           set.assigned_manual = 0;
@@ -320,6 +324,11 @@ export default function orderRoutes(db) {
     const { status, comment } = req.body || {};
     const allowed = { planned: ['in_progress', 'cancelled', 'done'], in_progress: ['paused', 'done', 'cancelled', 'planned'], paused: ['in_progress', 'done', 'cancelled'], done: ['in_progress'], cancelled: ['planned'] };
     if (!allowed[t.status]?.includes(status)) throw bad(`Нельзя перевести работу из «${t.status}» в «${status}»`);
+    if(status==='in_progress') {
+      const {emps,access}=loadEmployees(db);
+      const wt=t.work_type_id?db.prepare('SELECT * FROM work_types WHERE id=?').get(t.work_type_id):null;
+      if(!eligibleEmployees(wt,emps,access).some(e=>e.id===t.employee_id)) throw bad('Нельзя начать или продолжить работу: назначьте сотрудника с действующим допуском');
+    }
     const ts = req.body.at || nowIso();
     if (!Number.isFinite(new Date(ts).getTime())) throw bad('Некорректное время изменения статуса');
     const cal = calendarFor(db);

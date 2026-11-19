@@ -1,7 +1,7 @@
 import { json, nowIso } from '../db.js';
 import { calendarFor, getSettings } from '../settings.js';
 import { generatePlan, validatePlan } from '../domain/planner.js';
-import { rebuildSchedule } from '../domain/scheduler.js';
+import { assignmentIssues, rebuildSchedule } from '../domain/scheduler.js';
 import { recordMileage } from '../domain/maintenance.js';
 import { bad, fmtDateTime, notFound } from '../util.js';
 
@@ -108,7 +108,8 @@ export function refreshOrderState(db, orderId, { unschedulable = new Map(), now 
       unschedulable.set(t.id, 'не поставлена в расписание — нажмите «Пересчитать расписание»');
     }
   }
-  const errors = validatePlan(order, tasks, { scheduleByTask, unschedulable, now, fmtDate: (iso) => fmtDateTime(iso, off) });
+  const accessIssues = assignmentIssues(db,tasks);
+  const errors = [...accessIssues, ...validatePlan(order, tasks, { scheduleByTask, unschedulable, now, fmtDate: (iso) => fmtDateTime(iso, off) })];
 
   let status = order.status;
   const live = tasks.filter((t) => t.status !== 'cancelled');
@@ -145,6 +146,8 @@ export function loadOrder(db, id) {
     LEFT JOIN employees e ON e.id = t.employee_id
     LEFT JOIN schedule s ON s.task_id = t.id
     WHERE t.order_id = ? ORDER BY t.seq, t.priority, COALESCE(s.start_at, '9999'), t.id`).all(id);
+  const accessIssues=new Map(assignmentIssues(db,o.tasks).map(e=>[e.task_id,e.message]));
+  for(const task of o.tasks) task.access_issue=accessIssues.get(task.id)||null;
   o.work_sessions = db.prepare(`SELECT ws.*, e.name AS employee_name, t.description FROM task_work_sessions ws JOIN tasks t ON t.id = ws.task_id LEFT JOIN employees e ON e.id = ws.employee_id WHERE t.order_id = ? ORDER BY ws.started_at, ws.id`).all(id);
   o.parts = db.prepare('SELECT * FROM installed_parts WHERE order_id = ? ORDER BY installed_at').all(id);
   return o;

@@ -62,6 +62,7 @@ export default function Monitor() {
               onClick={()=>editing&&x.status==='planned'?setEdit(x):null} disabled={!editing||x.status!=='planned'} aria-label={`${editing&&x.status==='planned'?'Изменить':'Просмотр'}: ${x.description}, ${e.name}, ${day.date}`}>
               <div className="mon-slot-time">{fmtDateTime(x.start_at)} — {fmtDateTime(x.end_at)}{!!x.locked&&<Lock size={13}/>}</div>
               <div className="mon-task">{x.description}</div><div>{VEH[x.vehicle_type]} {plate(x.plate)}</div>
+              {x.access_issue&&<div className="mon-overdue">{x.access_issue}</div>}
               <div className="mon-slot-meta">{TASK_STATUS[x.status]?.label} · {PRIORITY[x.priority]?.label} · {x.order_number}</div>
               {editing&&x.status==='planned'&&<span className="mon-edit-label"><Pencil size={12}/> Изменить</span>}
             </button>)}

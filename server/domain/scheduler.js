@@ -29,6 +29,8 @@ export function loadEmployees(db) {
 export function eligibleEmployees(wt, emps, access) {
   if (!wt) return emps.filter((e) => e.general_access && !e.is_external);
   const allowed = access.get(wt.id) || new Set();
+  // An explicit internal-work permit list is authoritative, even if others share the qualification.
+  if (!wt.access_all && !wt.external) return emps.filter((e) => allowed.has(e.id));
   if (wt.external) return emps.filter((e) => e.is_external || allowed.has(e.id));
   if (wt.required_qualification) {
     const q = wt.required_qualification.toLowerCase();
@@ -36,6 +38,17 @@ export function eligibleEmployees(wt, emps, access) {
   }
   if (wt.access_all) return emps.filter((e) => (e.general_access && !e.is_external) || allowed.has(e.id));
   return emps.filter((e) => allowed.has(e.id));
+}
+
+// Conflicts are computed from the current catalog, never hidden by a manual lock.
+export function assignmentIssues(db, tasks) {
+  const { emps, access } = loadEmployees(db);
+  const names = new Map(db.prepare('SELECT id,name FROM employees').all().map(e=>[e.id,e.name]));
+  const works = new Map(db.prepare('SELECT * FROM work_types').all().map(w=>[w.id,w]));
+  return tasks.filter(t=>t.employee_id && ['planned','in_progress','paused'].includes(t.status))
+    .filter(t=>!eligibleEmployees(works.get(t.work_type_id),emps,access).some(e=>e.id===t.employee_id))
+    .map(t=>({code:'access_conflict',task_id:t.id,order_id:t.order_id,employee_id:t.employee_id,
+      message:`«${t.description}»: ${names.get(t.employee_id)||'сотрудник'} не имеет действующего допуска. ${t.status==='in_progress'?'Работа уже начата: приостановите её и назначьте допущенного слесаря.':t.status==='paused'?'Работа на паузе: перед продолжением назначьте допущенного слесаря.':t.assigned_manual?'Ручное назначение конфликтует с допуском: выберите допущенного слесаря или верните автопланирование.':'Плановое назначение конфликтует с допуском. Возобновите ремонт для пересчёта или выберите допущенного слесаря.'}`}));
 }
 
 // Средний коэффициент «факт / норма» по категориям работ (по выполненным задачам)
@@ -117,6 +130,11 @@ export function rebuildSchedule(db, { orderIds = null, now = new Date() } = {}) 
   db.prepare("DELETE FROM schedule WHERE task_id IN (SELECT id FROM tasks WHERE status = 'paused')").run();
   for (const t of allTasks) {
     if (t.status === 'paused') continue;
+    const allowed = eligibleEmployees(wts.get(t.work_type_id), emps, access);
+    if (t.status === 'planned' && t.s_locked && !allowed.some(e=>e.id===(t.s_emp||t.employee_id))) {
+      db.prepare('DELETE FROM schedule WHERE task_id=?').run(t.id);
+      t.s_locked=0; t.s_start=null; t.s_end=null;
+    }
     const movable = target.has(t.order_id) && t.status === 'planned' && !t.s_locked;
     if (movable) { toPlace.push(t); continue; }
     if (t.s_start && t.s_end && t.s_emp) {
@@ -174,11 +192,10 @@ export function rebuildSchedule(db, { orderIds = null, now = new Date() } = {}) 
     const wt = wts.get(t.work_type_id);
     let cands = eligibleEmployees(wt, emps, access);
     if (t.assigned_manual && t.employee_id) {
-      const m = empById.get(t.employee_id);
-      cands = m ? [m] : [];
+      cands = cands.filter(e=>e.id===t.employee_id);
     }
     if (!cands.length) {
-      unschedulable.set(t.id, t.assigned_manual ? 'назначенный сотрудник неактивен' : 'нет сотрудников с допуском к этой работе — настройте допуски в справочнике');
+      unschedulable.set(t.id, t.assigned_manual ? 'ручное назначение не соответствует действующему допуску или сотрудник неактивен' : 'нет сотрудников с допуском к этой работе — настройте допуски в справочнике');
       continue;
     }
 

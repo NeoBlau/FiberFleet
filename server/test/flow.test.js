@@ -154,6 +154,11 @@ test('выполнение работ, запчасти, переназначе�
 
   const emp = db.prepare("SELECT id FROM employees WHERE name = 'Козлов'").get();
   const other = o.tasks.find((x) => x.status === 'planned' && x.vehicle_type === 'trailer');
+  // This test checks reassignment permissions; both employees have an explicit work permit.
+  if (other.work_type_id) for (const name of ['Козлов', 'Козырев']) {
+    const e = db.prepare('SELECT id FROM employees WHERE name = ?').get(name);
+    db.prepare('INSERT OR IGNORE INTO work_type_access(work_type_id, employee_id) VALUES (?, ?)').run(other.work_type_id, e.id);
+  }
   r = await api('PUT', `/tasks/${other.id}`, { employee_id: emp.id });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.equal(r.data.tasks.find((x) => x.id === other.id).employee_id, emp.id);

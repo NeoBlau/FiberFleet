@@ -69,7 +69,7 @@ export default function Dashboard() {
                 <li key={t.id}>
                   <div className="tl-time">{fmtTime(t.start_at)}<br /><span className="muted">{fmtTime(t.end_at)}</span></div>
                   <div className="tl-main">
-                    <div><Badge tone={PRIORITY[t.priority].tone}>{PRIORITY[t.priority].short}</Badge> <b>{t.description}</b></div>
+                    <div><Badge tone={PRIORITY[t.priority].tone}>{PRIORITY[t.priority].short}</Badge> <b>{t.description}</b>{t.access_issue&&<div className="text-red small">{t.access_issue}</div>}</div>
                     <div className="muted">{VEH[t.vehicle_type]} {plate(t.plate)}{t.location ? ` · ${t.location}` : ''} · <Link to={`/orders/${t.order_id}`}>{t.order_number}</Link></div>
                   </div>
                   <div className="tl-side">

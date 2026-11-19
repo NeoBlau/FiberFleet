@@ -1,7 +1,7 @@
 import express from 'express';
 import { requirePerm } from '../auth.js';
 import { json, nowIso } from '../db.js';
-import { eligibleEmployees, loadEmployees, speedStats } from '../domain/scheduler.js';
+import { assignmentIssues, eligibleEmployees, loadEmployees, speedStats } from '../domain/scheduler.js';
 import { audit, replan } from '../services/orders.js';
 import { getSettings } from '../settings.js';
 import { catalogAmounts, syncPlannedCatalogTasks } from '../domain/catalog-pricing.js';
@@ -143,6 +143,7 @@ export default function staffRoutes(db) {
   r.put('/work-types/:id', requirePerm('catalog.write'), (req, res) => {
     const w = db.prepare('SELECT * FROM work_types WHERE id = ?').get(req.params.id);
     if (!w) throw notFound('Работа');
+    const beforeAssignments = db.prepare("SELECT id,employee_id FROM tasks WHERE work_type_id=? AND status='planned'").all(w.id);
     const data = wtFields(req.body || {});
     if (req.body.code !== undefined && req.body.code.trim()) data.code = req.body.code.trim();
     const hoursChanged = data.hours !== undefined && Number(data.hours) !== Number(w.hours);
@@ -173,8 +174,10 @@ export default function staffRoutes(db) {
       syncPlannedCatalogTasks(db, w.id);
     }
     audit(db, req.user, 'work_type', w.id, 'update', JSON.stringify(req.body));
-    if (req.body.access || 'access_all' in data || 'external' in data || ['hours', 'price', 'salary'].some((field) => field in data)) replan(db);
-    res.json({ ok: true });
+    if (req.body.access || 'access_all' in data || 'external' in data || 'required_qualification' in data || 'active' in data || ['hours', 'price', 'salary'].some((field) => field in data)) replan(db);
+    const access_conflicts=assignmentIssues(db,db.prepare("SELECT * FROM tasks WHERE work_type_id=? AND status IN ('planned','in_progress','paused')").all(w.id));
+    const reassigned=beforeAssignments.filter(old=>db.prepare('SELECT employee_id FROM tasks WHERE id=?').get(old.id)?.employee_id!==old.employee_id).length;
+    res.json({ ok: true, access_conflicts, reassigned });
   });
 
   r.delete('/work-types/:id', requirePerm('catalog.write'), (req, res) => {

@@ -151,6 +151,7 @@ export default function OrderPage() {
                         <td data-l="Работа">
                           <button className="linklike" onClick={() => setTaskEdit(t)}><b>{t.description}</b></button>
                           <div className="small muted">{t.location ? `${t.location} · ` : ''}{SOURCE[t.source]}{t.seq === 0 ? ' · сначала' : t.seq === 1 ? ' · осмотр до ремонта' : t.seq === 3 ? ' · после ремонта' : ''}</div>
+                          {t.access_issue&&<div className="text-red small">{t.access_issue}</div>}
                           {t.elapsed_minutes > 0 && <div className="small text-green">Учтённое время: {hours(t.elapsed_minutes / 60)} ч</div>}
                           {t.reason && <div className="small muted reason">{t.reason}</div>}
                           {t.comment && <div className="small">💬 {t.comment}</div>}

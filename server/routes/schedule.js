@@ -1,6 +1,7 @@
 import express from 'express';
 import { requirePerm } from '../auth.js';
 import { json } from '../db.js';
+import { assignmentIssues } from '../domain/scheduler.js';
 import { fleetMaintenance } from '../domain/maintenance.js';
 import { calendarFor } from '../settings.js';
 import { editSchedule, schedulingOptions } from '../services/manual-schedule.js';
@@ -12,8 +13,8 @@ const DAY = 86400000;
 export default function scheduleRoutes(db) {
   const r = express.Router();
 
-  const entries = (from, to, employeeId) => db.prepare(`SELECT s.id, s.task_id, s.employee_id, s.start_at, s.end_at, s.locked,
-      t.updated_at, t.assigned_manual, t.elapsed_minutes, t.description, t.location, t.status, t.priority, t.deadline, t.hours, t.order_id, t.vehicle_type, t.vehicle_id, t.reason,
+  const entries = (from, to, employeeId) => { const rows=db.prepare(`SELECT s.id, s.task_id, s.employee_id, s.start_at, s.end_at, s.locked,
+      t.work_type_id, t.updated_at, t.assigned_manual, t.elapsed_minutes, t.description, t.location, t.status, t.priority, t.deadline, t.hours, t.order_id, t.vehicle_type, t.vehicle_id, t.reason,
       o.number AS order_number, e.name AS employee_name,
       CASE t.vehicle_type WHEN 'tractor' THEN tr.plate ELSE tl.plate END AS plate,
       CASE t.vehicle_type WHEN 'tractor' THEN tr.brand || ' ' || COALESCE(tr.model,'') ELSE COALESCE(tl.brand,'') || ' ' || tl.model END AS vehicle_name
@@ -24,6 +25,9 @@ export default function scheduleRoutes(db) {
     LEFT JOIN trailers tl ON t.vehicle_type = 'trailer' AND tl.id = t.vehicle_id
     WHERE s.end_at > @from AND s.start_at < @to AND t.status <> 'cancelled' ${employeeId ? 'AND s.employee_id = @emp' : ''}
     ORDER BY s.start_at`).all({ from, to, emp: employeeId });
+    const issues=new Map(assignmentIssues(db,rows.map(row=>({...row,id:row.task_id}))).map(e=>[e.task_id,e.message]));
+    return rows.map(row=>({...row,access_issue:issues.get(row.task_id)||null}));
+  };
 
   r.get('/schedule', (req, res) => {
     const cal = calendarFor(db);

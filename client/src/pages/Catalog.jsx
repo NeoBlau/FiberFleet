@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Fragment, useMemo, useState } from 'react';
 import { Plus, Search, BookOpen } from 'lucide-react';
 import * as api from '../api.js';
@@ -15,6 +16,8 @@ export default function Catalog() {
   const { data, loading, error, reload } = useLoad(() => api.get(`/work-types${showInactive ? '?all=1' : ''}`), [showInactive]);
   const emps = useLoad(() => api.get('/employees'));
   const [q, setQ] = useState('');
+  const [accessWarnings,setAccessWarnings]=useState([]);
+  const [reassigned,setReassigned]=useState(0);
   const [cat, setCat] = useState('');
   const [edit, setEdit] = useState(null);
   const cats = useMemo(() => [...new Set((data || []).map((w) => w.category))], [data]);
@@ -38,6 +41,8 @@ export default function Catalog() {
         <label className="check"><input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Показать отключённые</label>
       </div>
       <ErrorBox error={error} onRetry={reload} />
+      {reassigned>0&&<div className="alert alert-green">Назначения пересчитаны: переназначено работ — {reassigned}.</div>}
+      {!!accessWarnings.length&&<div className="alert alert-amber"><div><b>Допуски сохранены. Есть конфликты назначений:</b>{accessWarnings.map(w=><p key={w.task_id}>{w.message} <Link to={`/orders/${w.order_id}`}>Открыть ремонт</Link></p>)}</div></div>}
       {loading && !data ? <Spinner /> : rows.length === 0 ? <Empty icon={BookOpen} title="Ничего не найдено" /> : (
         <div className="table-wrap card">
           <table className="table table-click">
@@ -64,7 +69,7 @@ export default function Catalog() {
           </table>
         </div>
       )}
-      {edit && <WorkDialog w={edit} cats={cats} emps={emps.data || []} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
+      {edit && <WorkDialog w={edit} cats={cats} emps={emps.data || []} onClose={() => setEdit(null)} onSaved={(result) => { setAccessWarnings(result?.access_conflicts||[]); setReassigned(result?.reassigned||0); setEdit(null); reload(); }} />}
     </div>
   );
 }
@@ -103,7 +108,7 @@ function WorkDialog({ w, cats, emps, onClose, onSaved }) {
       <Button onClick={onClose}>Отмена</Button>
       <Button variant="primary" loading={busy} onClick={() => run(async () => {
         const r = w.id ? await api.put(`/work-types/${w.id}`, f) : await api.post('/work-types', f);
-        onSaved(); return r;
+        onSaved(r); return r;
       }, 'Сохранено')}>Сохранить</Button>
     </>}>
       <p className="small muted">При изменении нормы цена и ЗП пересчитываются автоматически. Нормо-час: {money(settings.norm_hour_price)}, доля ЗП: {Math.round(settings.salary_rate * 10000) / 100} %.</p>
