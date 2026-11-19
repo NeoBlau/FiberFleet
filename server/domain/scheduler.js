@@ -40,6 +40,19 @@ export function eligibleEmployees(wt, emps, access) {
   return emps.filter((e) => allowed.has(e.id));
 }
 
+// Explain the same eligibility rules used by the planner; workload never removes a permit.
+export function eligibilityReason(wt, emps, access) {
+  if (eligibleEmployees(wt,emps,access).length) return null;
+  if (!emps.length) return 'Нет активных сотрудников. Проверьте флажок «Активен» в разделе «Сотрудники».';
+  const allowed=access.get(wt?.id)||new Set();
+  if(wt && !wt.access_all && !wt.external) return allowed.size
+    ? 'Сотрудники из списка допуска неактивны. Проверьте их карточки в разделе «Сотрудники».'
+    : 'Для работы выбран индивидуальный допуск, но список сотрудников пуст. Выберите исполнителей в справочнике работ.';
+  if(wt?.external) return 'Работа передана стороннему сервису, но нет активного подрядчика или явно допущенного сотрудника.';
+  if(wt?.required_qualification) return `Требуется квалификация «${wt.required_qualification}». Среди активных сотрудников нет подходящих или явно допущенных исполнителей. Проверьте квалификацию и список допуска.`;
+  return 'В работе выбран общий допуск («Все»), но среди активных штатных сотрудников ни у кого не включён флажок «Допущен к работам с допуском «Все»» и нет индивидуального допуска. Проверьте раздел «Сотрудники» → карточка → «Данные».';
+}
+
 // Conflicts are computed from the current catalog, never hidden by a manual lock.
 export function assignmentIssues(db, tasks) {
   const { emps, access } = loadEmployees(db);
@@ -195,7 +208,7 @@ export function rebuildSchedule(db, { orderIds = null, now = new Date() } = {}) 
       cands = cands.filter(e=>e.id===t.employee_id);
     }
     if (!cands.length) {
-      unschedulable.set(t.id, t.assigned_manual ? 'ручное назначение не соответствует действующему допуску или сотрудник неактивен' : 'нет сотрудников с допуском к этой работе — настройте допуски в справочнике');
+      unschedulable.set(t.id, t.assigned_manual ? 'ручное назначение не соответствует действующему допуску или сотрудник неактивен: выберите допустимого сотрудника или верните автопланирование' : eligibilityReason(wt,emps,access));
       continue;
     }
 

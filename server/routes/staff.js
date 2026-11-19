@@ -1,7 +1,7 @@
 import express from 'express';
 import { requirePerm } from '../auth.js';
 import { json, nowIso } from '../db.js';
-import { assignmentIssues, eligibleEmployees, loadEmployees, speedStats } from '../domain/scheduler.js';
+import { assignmentIssues, eligibilityReason, eligibleEmployees, loadEmployees, speedStats } from '../domain/scheduler.js';
 import { audit, replan } from '../services/orders.js';
 import { getSettings } from '../settings.js';
 import { catalogAmounts, syncPlannedCatalogTasks } from '../domain/catalog-pricing.js';
@@ -107,7 +107,9 @@ export default function staffRoutes(db) {
     const rows = db.prepare(`SELECT w.*, (SELECT group_concat(employee_id) FROM work_type_access a WHERE a.work_type_id = w.id) AS access_ids,
         (SELECT COUNT(*) FROM tasks t WHERE t.work_type_id = w.id) AS used
       FROM work_types w ${req.query.all === '1' ? '' : 'WHERE w.active = 1'} ORDER BY w.category, w.name`).all();
-    res.json(rows.map((w) => ({ ...w, access: w.access_ids ? String(w.access_ids).split(',').map(Number) : [], access_ids: undefined })));
+    const {emps,access}=loadEmployees(db);
+    res.json(rows.map((w) => ({ ...w, access: w.access_ids ? String(w.access_ids).split(',').map(Number) : [], access_ids: undefined,
+      eligibility: {employees:eligibleEmployees(w,emps,access).map(e=>({id:e.id,name:e.name})), reason:eligibilityReason(w,emps,access)} })));
   });
 
   const wtFields = (b) => {

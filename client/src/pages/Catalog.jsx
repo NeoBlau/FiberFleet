@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Fragment, useMemo, useState } from 'react';
 import { Plus, Search, BookOpen } from 'lucide-react';
 import * as api from '../api.js';
@@ -11,6 +11,8 @@ const range = (a, b, fmt) => (b && b !== a ? `${fmt(a)} – ${fmt(b)}` : fmt(a))
 
 export default function Catalog() {
   const { user } = useApp();
+  const [params,setParams]=useSearchParams();
+  const workId=Number(params.get('work_type_id'))||null;
   const canWrite = can(user, 'catalog.write');
   const [showInactive, setShowInactive] = useState(false);
   const { data, loading, error, reload } = useLoad(() => api.get(`/work-types${showInactive ? '?all=1' : ''}`), [showInactive]);
@@ -23,7 +25,7 @@ export default function Catalog() {
   const cats = useMemo(() => [...new Set((data || []).map((w) => w.category))], [data]);
   const empName = (id) => (emps.data || []).find((e) => e.id === id)?.name || `#${id}`;
 
-  const rows = (data || []).filter((w) => (!cat || w.category === cat) && (!q || `${w.name} ${w.code}`.toLowerCase().includes(q.toLowerCase())));
+  const rows = (data || []).filter((w) => (!workId || w.id===workId) && (!cat || w.category === cat) && (!q || `${w.name} ${w.code}`.toLowerCase().includes(q.toLowerCase())));
 
   return (
     <div className="page">
@@ -31,6 +33,7 @@ export default function Catalog() {
         <h1>Справочник работ</h1>
         {canWrite && <Button variant="primary" icon={Plus} onClick={() => setEdit({})}>Новая работа</Button>}
       </div>
+      {workId&&<div className="alert alert-blue">Показана работа из ремонта, ID {workId}. <Button size="sm" onClick={()=>setParams({})}>Показать весь справочник</Button></div>}
       <p className="muted">База фиксированных работ (по прайс-листу): норма времени, цена с НДС, ЗП исполнителя и допуск. Работы выбираются из этого списка при дефектовке и в плане ремонта.</p>
       <div className="toolbar">
         <div className="search"><Search size={16} /><input className="input" placeholder="Название или код" value={q} onChange={(e) => setQ(e.target.value)} /></div>
@@ -59,8 +62,9 @@ export default function Catalog() {
                     <td className="nowrap">{w.price == null ? <span className="muted">к/д</span> : range(w.price, w.price_max, money)}</td>
                     <td className="nowrap">{w.salary == null ? '—' : range(w.salary, w.salary_max, money)}</td>
                     <td className="small">
-                      {w.external ? <Badge tone="blue">сервис</Badge> : w.access_all ? 'Все' : w.access.map(empName).join(', ')}
+                      {w.external ? <Badge tone="blue">сервис</Badge> : w.access_all ? 'Общий допуск («Все»)' : w.access.map(empName).join(', ')}
                       {w.required_qualification && <Badge>{w.required_qualification}</Badge>}
+                      {w.eligibility&&<><div className={w.eligibility.employees.length?'small text-green':'small text-red'}>Допущено активных исполнителей: {w.eligibility.employees.length}</div>{w.eligibility.reason&&<div className="small text-red">{w.eligibility.reason} <Link to="/employees" onClick={e=>e.stopPropagation()}>Проверить сотрудников</Link></div>}{!!w.eligibility.employees.length&&<details onClick={e=>e.stopPropagation()}><summary className="small">Кто может выполнять</summary>{w.eligibility.employees.map(e=><div key={e.id}>{e.name}</div>)}</details>}</>}
                     </td>
                   </tr>
                 </Fragment>
@@ -130,6 +134,7 @@ function WorkDialog({ w, cats, emps, onClose, onSaved }) {
         <Field label="ЗП, ₽"><input className="input" type="number" value={f.salary} onChange={set('salary')} /></Field>
         <Field label="ЗП макс., ₽"><input className="input" type="number" value={f.salary_max} onChange={set('salary_max')} /></Field>
         <Field label="Примечание" className="span-2"><input className="input" value={f.note} onChange={set('note')} /></Field>
+        <p className="small muted span-2">«Все» означает активных штатных сотрудников с включённым общим допуском в карточке сотрудника. Требование квалификации учитывается отдельно; индивидуальный список задаёт конкретных исполнителей.</p>
         <label className="check"><input type="checkbox" checked={f.access_all} onChange={set('access_all')} /> Допуск: все сотрудники</label>
         <label className="check"><input type="checkbox" checked={f.external} onChange={set('external')} /> Выполняет сторонний сервис</label>
         <label className="check"><input type="checkbox" checked={f.active} onChange={set('active')} /> Активна</label>

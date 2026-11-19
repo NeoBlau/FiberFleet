@@ -139,7 +139,7 @@ export function loadOrder(db, id) {
   o.inspection = json(o.inspection, {});
   o.plan_errors = json(o.plan_errors, []);
   o.exit_control = json(o.exit_control, null);
-  o.tasks = db.prepare(`SELECT t.*, w.category, w.code AS work_code, e.name AS employee_name,
+  o.tasks = db.prepare(`SELECT t.*, w.code AS work_code, w.category, e.name AS employee_name,
       s.start_at, s.end_at, s.locked, s.employee_id AS scheduled_employee_id
     FROM tasks t
     LEFT JOIN work_types w ON w.id = t.work_type_id
