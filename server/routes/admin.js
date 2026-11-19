@@ -1,3 +1,8 @@
+import Database from 'better-sqlite3';
+import multer from 'multer';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+const requireFromExcel = createRequire(createRequire(import.meta.url).resolve('exceljs'));
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -85,11 +90,99 @@ export default function adminRoutes(db) {
       ORDER BY a.id DESC LIMIT ?`).all(Math.min(Number(req.query.limit) || 200, 2000)));
   });
 
-  // Резервная копия базы данных (консистентный снимок)
-  r.get('/admin/backup', requirePerm('settings.write'), wrap(async (_req, res) => {
-    const file = path.join(os.tmpdir(), `fiberfleet-backup-${Date.now()}.db`);
-    await db.backup(file);
-    res.download(file, `fiberfleet-${new Date().toISOString().slice(0, 10)}.db`, () => fs.rm(file, { force: true }, () => {}));
+  // Backups are private, consistent SQLite snapshots.
+  const adminOnly = (req, res, next) => req.user?.role === 'admin' ? next() : res.status(403).json({ error: 'Только администратор' });
+  const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
+  const clean = dir => fs.rmSync(dir, { recursive: true, force: true });
+  const verify = file => {
+    const copy = new Database(file, { readonly: true, fileMustExist: true });
+    try {
+      if (copy.pragma('integrity_check', { simple: true }) !== 'ok') throw bad('Повреждённая база SQLite');
+      const schema = d => d.prepare("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
+      if (JSON.stringify(schema(copy)) !== JSON.stringify(schema(db))) throw bad('Несовместимая схема базы — используйте соответствующую версию FiberFleet');
+      if (copy.pragma('foreign_key_check').length) throw bad('Нарушены связи в базе');
+      if (!copy.prepare("SELECT 1 FROM users WHERE role='admin' AND active=1 LIMIT 1").get()) throw bad('В копии нет активного администратора');
+    } finally { copy.close(); }
+  };
+  async function exportBackup(req, res, next, full) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fiberfleet-'));
+    try {
+      const file = path.join(dir, 'fiberfleet.db');
+      await db.backup(file);
+      verify(file);
+      let output = file;
+      if (full) {
+        output = path.join(dir, 'fiberfleet.zip');
+        const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+        const archive = requireFromExcel('archiver')('zip', { zlib: { level: 6 } });
+        const stream = fs.createWriteStream(output, { mode: 0o600 });
+        const finished = new Promise((resolve, reject) => {
+          stream.on('close', resolve); stream.on('error', reject);
+          archive.on('error', reject); archive.on('warning', reject);
+        });
+        archive.pipe(stream);
+        for (const name of ['server','client','deploy','tools','docs','package.json','package-lock.json','README.md','Dockerfile','docker-compose.yml','compose.yml']) {
+          const source = path.join(root, name);
+          if (!fs.existsSync(source)) continue;
+          if (fs.statSync(source).isDirectory()) archive.glob('**/*', { cwd: source, dot: true, ignore: ['**/node_modules/**','**/.git/**','**/.env*','**/*.db','**/*.db-wal','**/*.db-shm'] }, { prefix: name });
+          else archive.file(source, { name });
+        }
+        archive.file(file, { name: 'data/fiberfleet.db' });
+        archive.append(JSON.stringify({ format: 'FiberFleet', version: 1, createdAt: new Date().toISOString(), database: 'data/fiberfleet.db' }), { name: 'backup-manifest.json' });
+        await Promise.all([archive.finalize(), finished]);
+      }
+      res.set('Cache-Control', 'no-store');
+      res.download(output, 'fiberfleet-' + stamp() + (full ? '.zip' : '.db'), err => {
+        clean(dir);
+        if (err && !res.headersSent) next(err);
+      });
+    } catch (err) {
+      clean(dir); console.error('FiberFleet backup:', err);
+      if (!res.headersSent) res.status(500).json({ error: 'Не удалось создать резервную копию: ' + (err.code || 'проверьте журнал сервера') });
+      else next(err);
+    }
+  }
+  r.get('/admin/backup', adminOnly, wrap((req,res,next) => exportBackup(req,res,next,false)));
+  r.get('/admin/backup/full', adminOnly, wrap((req,res,next) => exportBackup(req,res,next,true)));
+
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 128 * 1024 * 1024, files: 1 } });
+  r.post('/admin/backup/restore', adminOnly, upload.single('backup'), wrap(async (req,res) => {
+    if (!req.file || req.body.confirm !== 'RESTORE') throw bad('Выберите копию и подтвердите восстановление');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fiberfleet-restore-'));
+    try {
+      const incoming = path.join(dir, 'incoming.db');
+      let bytes = req.file.buffer;
+      if (bytes.subarray(0,2).toString() === 'PK') {
+        const zip = await requireFromExcel('unzipper').Open.buffer(bytes);
+        const entries = zip.files.filter(x => x.path === 'data/fiberfleet.db');
+        if (entries.length !== 1 || entries[0].uncompressedSize > 128 * 1024 * 1024) throw bad('Неверный архив FiberFleet');
+        bytes = await entries[0].buffer();
+      }
+      if (bytes.subarray(0,16).toString() !== 'SQLite format 3\0') throw bad('Неверный формат базы');
+      fs.writeFileSync(incoming, bytes, { mode: 0o600 });
+      verify(incoming);
+      if (db.name === ':memory:') throw bad('Восстановление временной базы запрещено');
+      const safety = path.join(path.dirname(path.resolve(db.name)), 'backups');
+      fs.mkdirSync(safety, { recursive: true, mode: 0o700 });
+      const old = path.join(safety, 'before-restore-' + stamp() + '-' + path.basename(dir) + '.db');
+      await db.backup(old);
+      // No awaits during the replacement: one atomic SQLite transaction.
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all().map(x => x.name);
+      const quote = s => '"' + s.replaceAll('"','""') + '"';
+      db.prepare('ATTACH DATABASE ? AS incoming').run(incoming);
+      try {
+        db.pragma('foreign_keys = OFF');
+        db.transaction(() => {
+          for (const t of tables) db.exec('DELETE FROM main.' + quote(t));
+          for (const t of tables) if (t !== 'sessions') db.exec('INSERT INTO main.' + quote(t) + ' SELECT * FROM incoming.' + quote(t));
+          if (db.pragma('foreign_key_check').length) throw bad('Нарушены связи после восстановления');
+        })();
+      } finally {
+        db.pragma('foreign_keys = ON');
+        db.exec('DETACH DATABASE incoming');
+      }
+      res.json({ ok: true, message: 'Данные восстановлены. Войдите снова.', safetyBackup: path.basename(old) });
+    } finally { clean(dir); }
   }));
 
   return r;
