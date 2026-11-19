@@ -477,3 +477,28 @@ select.input { padding-right: 28px; }
 .manual-work .input:first-child { flex: 1; min-width: 200px; max-width: 360px; }
 
 .item-service { background: linear-gradient(90deg, #dcfce7, transparent 70%); margin: 0 -16px; padding-left: 16px; padding-right: 16px; border-left: 3px solid #16a34a; }
+
+.mon-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:12px 20px; }
+.mon-toolbar .input { width:auto; max-width:100%; }
+.mon-help { color:#94a3b8; padding:0 20px 10px; margin:0; font-size:13px; }
+.mon-result { margin:0 20px 12px; padding:12px; background:#173028; border:1px solid #225841; border-radius:8px; }
+.mon-result a { color:#93c5fd; }
+.mon-calendar-wrap { overflow:auto; flex:1; max-height:calc(100vh - 235px); margin:0 20px 16px; border:1px solid #334155; border-radius:10px; }
+.mon-calendar { width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed; }
+.mon-calendar th,.mon-calendar td { min-width:260px; width:260px; padding:10px; border-right:1px solid #253247; border-bottom:1px solid #253247; vertical-align:top; text-align:left; }
+.mon-calendar thead th { position:sticky; top:0; z-index:2; background:#182438; color:#dbeafe; }
+.mon-calendar tr>th:first-child { position:sticky; left:0; width:180px; min-width:180px; background:#121b27; z-index:1; }
+.mon-calendar thead th:first-child { z-index:3; }
+.mon-day-load { color:#94a3b8; font-size:12px; margin-bottom:8px; }
+.mon-empty { color:#64748b; font-size:13px; }
+.mon-slot { display:block; width:100%; margin:0 0 8px; padding:10px; text-align:left; color:#e2e8f0; background:#172334; border:1px solid #334155; border-left:3px solid #60a5fa; border-radius:8px; cursor:pointer; white-space:normal; }
+.mon-slot:disabled { opacity:1; cursor:default; }
+.mon-slot:not(:disabled):hover { border-color:#93c5fd; background:#1e3048; }
+.mon-slot.running { border-left-color:#fbbf24; }
+.mon-slot.locked { border-right:3px solid #a78bfa; }
+.mon-slot-time { display:flex; align-items:center; flex-wrap:wrap; gap:5px; color:#93c5fd; font-size:12px; }
+.mon-slot .mon-task { font-size:15px; margin:5px 0; }
+.mon-slot-meta { margin-top:5px; font-size:12px; color:#94a3b8; }
+.mon-edit-label { display:flex; gap:4px; align-items:center; margin-top:6px; color:#a5b4fc; font-size:12px; }
+.monitor .modal { color:var(--ink); }
+@media(max-width:700px) { .mon-head { flex-wrap:wrap; }.mon-head h1 { font-size:15px; }.mon-clock{font-size:20px;}.mon-toolbar{padding:10px;}.mon-calendar-wrap{margin:0 10px 10px;max-height:65vh;}.mon-calendar tr>th:first-child{width:130px;min-width:130px;}.mon-calendar td{width:240px;min-width:240px;} }
